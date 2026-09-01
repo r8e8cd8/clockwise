@@ -9,6 +9,7 @@
 #include <CWPreferences.h>
 #include <CWWebServer.h>
 #include <StatusController.h>
+#include <birthday_boot.h>
 
 #define MIN_BRIGHT_DISPLAY_ON 4
 #define MIN_BRIGHT_DISPLAY_OFF 0
@@ -26,6 +27,58 @@ bool autoBrightEnabled;
 long autoBrightMillis = 0;
 uint8_t currentBrightSlot = -1;
 
+static void drawBootFrame(Adafruit_GFX *d, uint8_t idx)
+{
+  if (!d || idx >= BIRTHDAY_BOOT_COUNT) return;
+  for (int y = 0; y < 64; y++) {
+    for (int x = 0; x < 64; x++) {
+      uint8_t c = pgm_read_byte(&BIRTHDAY_BOOT[idx][y * 64 + x]);
+      d->drawPixel(x, y, birthdayRgb565(c));
+    }
+  }
+}
+
+// Cake + loading bar together
+void playCakeWithLoadingBar(Adafruit_GFX *d, unsigned long ms)
+{
+  if (!d || BIRTHDAY_BOOT_COUNT < 2) return;
+  // [0]=person blow, [1]=cake
+  drawBootFrame(d, 1);
+
+  const uint16_t barBg = 0x2104;
+  const uint16_t barFg = 0xF81F;
+  for (int x = 0; x < 64; x++) {
+    d->drawPixel(x, 61, barBg);
+    d->drawPixel(x, 62, barBg);
+  }
+  unsigned long t0 = millis();
+  while (millis() - t0 < ms) {
+    int w = (int)((millis() - t0) * 64 / ms);
+    if (w > 64) w = 64;
+    for (int x = 0; x < w; x++) {
+      d->drawPixel(x, 61, barFg);
+      d->drawPixel(x, 62, barFg);
+    }
+    delay(16);
+  }
+}
+
+// Birthday character (blow / person) — no Happy Birthday text
+void playBirthdayPortrait(Adafruit_GFX *d)
+{
+  if (!d || BIRTHDAY_BOOT_COUNT == 0) return;
+  d->fillScreen(0x0000);  // wipe cake text + loading bar
+  drawBootFrame(d, 0);
+  delay(BIRTHDAY_BOOT_MS);
+}
+
+// Order: cake+loading bar → birthday person → caller shows normal face
+void playBirthdayBoot(Adafruit_GFX *d)
+{
+  playCakeWithLoadingBar(d, 2500);
+  playBirthdayPortrait(d);
+}
+
 bool isValidI2SSpeed(uint32_t speed) {
   return speed == 8000000 || speed == 16000000 || speed == 20000000;
 }
@@ -34,45 +87,51 @@ bool isValidDriver(uint32_t drv) {
   return drv >= 0 && drv <= 5;
 }
 
+// This board has no P18; E uses P2 (LED pin — StatusController LED blink disabled)
+static const int8_t PANEL_E_PIN = 2;
 
+void showScanBands(Adafruit_GFX *d)
+{
+  d->fillRect(0, 0, 64, 16, 0xF800);
+  d->fillRect(0, 16, 64, 16, 0x07E0);
+  d->fillRect(0, 32, 64, 16, 0x001F);
+  d->fillRect(0, 48, 64, 16, 0xFFE0);
+  delay(3000);
+}
 
 void displaySetup(bool swapBlueGreen, bool swapBlueRed, uint8_t displayBright, uint8_t displayRotation, uint8_t driver, uint32_t i2cSpeed, uint8_t E_pin)
 {
+  (void)swapBlueGreen;
+  (void)swapBlueRed;
+  (void)E_pin;
+
   HUB75_I2S_CFG mxconfig(64, 64, 1);
-
-  if (swapBlueGreen)
-  {
-    // Swap Blue and Green pins because the panel is RBG instead of RGB.
-    mxconfig.gpio.b1 = 26;
-    mxconfig.gpio.b2 = 12;
-    mxconfig.gpio.g1 = 27;
-    mxconfig.gpio.g2 = 13;
-  }
-
-  if (swapBlueRed)
-  {
-    // Swap Blue and Red pins. 
-    mxconfig.gpio.b1 = 25;
-    mxconfig.gpio.b2 = 14;
-    mxconfig.gpio.r1 = 27;
-    mxconfig.gpio.r2 = 13;
-  }
-
-  mxconfig.gpio.e = E_pin;
+  mxconfig.gpio.r1 = 27;
+  mxconfig.gpio.g1 = 25;
+  mxconfig.gpio.b1 = 26;
+  mxconfig.gpio.r2 = 13;
+  mxconfig.gpio.g2 = 14;
+  mxconfig.gpio.b2 = 12;
+  mxconfig.gpio.a = 23;
+  mxconfig.gpio.b = 19;
+  mxconfig.gpio.c = 5;
+  mxconfig.gpio.d = 17;
+  mxconfig.gpio.e = PANEL_E_PIN;
+  mxconfig.gpio.lat = 4;
+  mxconfig.gpio.oe = 15;
+  mxconfig.gpio.clk = 16;
   mxconfig.clkphase = false;
+  mxconfig.driver = HUB75_I2S_CFG::SHIFTREG;
+  mxconfig.latch_blanking = 1;
+  mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;  // stable refresh; avoid prefs garbage
 
-  if (isValidDriver(driver)) {
-    mxconfig.driver = static_cast<HUB75_I2S_CFG::shift_driver>(driver);
-  } else {
-    Serial.printf("[ERROR] Invalid driver from config:%d\n", driver);
+  if (isValidDriver(driver) && driver == 0) {
+    mxconfig.driver = HUB75_I2S_CFG::SHIFTREG;
   }
-  if (isValidI2SSpeed(i2cSpeed)) {
-    mxconfig.i2sspeed = static_cast<HUB75_I2S_CFG::clk_speed>(i2cSpeed);
-  } else {
-    Serial.printf("[ERROR] Invalid I2S speed from config:%d\n", i2cSpeed);
-  }
+  (void)i2cSpeed;
 
-  // Display Setup
+  Serial.printf("[PANEL] 64x64 E=GPIO%d bright=%u\n", PANEL_E_PIN, displayBright);
+
   dma_display = new MatrixPanel_I2S_DMA(mxconfig);
   dma_display->begin();
   dma_display->setBrightness8(displayBright);
@@ -93,15 +152,13 @@ void automaticBrightControl()
       const uint8_t minBright = (currentValue < ldrMin ? MIN_BRIGHT_DISPLAY_OFF : MIN_BRIGHT_DISPLAY_ON);
       uint8_t maxBright = ClockwiseParams::getInstance()->displayBright;
 
-      uint8_t slots = 10; //10 slots
+      uint8_t slots = 10;
       uint8_t mapLDR = map(currentValue > ldrMax ? ldrMax : currentValue, ldrMin, ldrMax, 1, slots);
       uint8_t mapBright = map(mapLDR, 1, slots, minBright, maxBright);
 
-      // Serial.printf("LDR: %d, mapLDR: %d, Bright: %d\n", currentValue, mapLDR, mapBright);
-      if(abs(currentBrightSlot - mapLDR ) >= 2 || mapBright == 0){
-           dma_display->setBrightness8(mapBright);
-           currentBrightSlot=mapLDR;
-          //  Serial.printf("setBrightness: %d , Update currentBrightSlot to %d\n", mapBright, mapLDR);
+      if (abs(currentBrightSlot - mapLDR) >= 2 || mapBright == 0) {
+        dma_display->setBrightness8(mapBright);
+        currentBrightSlot = mapLDR;
       }
       autoBrightMillis = millis();
     }
@@ -111,36 +168,49 @@ void automaticBrightControl()
 void setup()
 {
   Serial.begin(115200);
-  pinMode(ESP32_LED_BUILTIN, OUTPUT);
-
-  StatusController::getInstance()->blink_led(5, 100);
+  // Do not touch GPIO2 as LED — it is HUB75 E on this board
 
   ClockwiseParams::getInstance()->load();
-
   pinMode(ClockwiseParams::getInstance()->ldrPin, INPUT);
 
-  uint8_t driver = ClockwiseParams::getInstance()->driver;
-  uint32_t i2cSpeed = ClockwiseParams::getInstance()->i2cSpeed;
-  uint8_t E_pin = ClockwiseParams::getInstance()->E_pin;
-  
-  displaySetup(ClockwiseParams::getInstance()->swapBlueGreen, ClockwiseParams::getInstance()->swapBlueRed, ClockwiseParams::getInstance()->displayBright, ClockwiseParams::getInstance()->displayRotation, driver, i2cSpeed, E_pin);
+  auto *p = ClockwiseParams::getInstance();
+  if (!p->preferences.isKey("marioPortraitDim")) {
+    p->E_pin = PANEL_E_PIN;
+    p->displayBright = 18;
+    p->autoBrightMax = 0;
+    p->timeZone = "Asia/Shanghai";
+    p->use24hFormat = true;
+    p->ntpServer = "ntp.aliyun.com";
+    p->save();
+    p->preferences.putBool("marioPortraitDim", true);
+    Serial.println("[CONFIG] Portrait dim brightness 18");
+  }
+  p->E_pin = PANEL_E_PIN;
+  p->timeZone = "Asia/Shanghai";
+  p->displayBright = 14;
+  p->autoBrightMax = 0;
+  p->driver = 0;
+  p->i2cSpeed = 10000000;
+  p->save();
+
+  displaySetup(false, false, p->displayBright, p->displayRotation, p->driver, p->i2cSpeed, PANEL_E_PIN);
   clockface = new Clockface(dma_display);
 
-  autoBrightEnabled = (ClockwiseParams::getInstance()->autoBrightMax > 0);
+  autoBrightEnabled = false;
 
-  StatusController::getInstance()->clockwiseLogo();
-  delay(1000);
+  // 1) loading bar  2) birthday portrait  3) normal clockface
+  // (skip WiFi icon screens so they don't interrupt the gift intro)
+  playBirthdayBoot(dma_display);
 
-  StatusController::getInstance()->wifiConnecting();
   if (wifi.begin())
   {
-    StatusController::getInstance()->ntpConnecting();
-    cwDateTime.begin(ClockwiseParams::getInstance()->timeZone.c_str(), 
-        ClockwiseParams::getInstance()->use24hFormat, 
-        ClockwiseParams::getInstance()->ntpServer.c_str(),
-        ClockwiseParams::getInstance()->manualPosix.c_str());
-    clockface->setup(&cwDateTime);
+    cwDateTime.begin(p->timeZone.c_str(),
+                     p->use24hFormat,
+                     p->ntpServer.c_str(),
+                     p->manualPosix.c_str());
+    Serial.printf("[POKE] Phone UI: http://%s/poke\n", WiFi.localIP().toString().c_str());
   }
+  clockface->setup(&cwDateTime);
 }
 
 void loop()

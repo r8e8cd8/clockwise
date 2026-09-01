@@ -23,7 +23,8 @@ struct ClockwiseHttpClient
     }
 
     client->setInsecure();
-    client->setTimeout(10000);
+    client->setTimeout(8000);
+    client->setHandshakeTimeout(8);
     if (!client->connect(host, port))
     {
       Serial.println(F("Connection failed"));

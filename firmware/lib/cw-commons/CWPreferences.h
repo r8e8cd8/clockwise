@@ -91,7 +91,7 @@ struct ClockwiseParams
         autoBrightMin = preferences.getUInt(PREF_DISPLAY_ABC_MIN, 0);
         autoBrightMax = preferences.getUInt(PREF_DISPLAY_ABC_MAX, 0);
         ldrPin = preferences.getUInt(PREF_LDR_PIN, 35);        
-        timeZone = preferences.getString(PREF_TIME_ZONE, "America/Sao_Paulo");
+        timeZone = preferences.getString(PREF_TIME_ZONE, "Asia/Shanghai");
         wifiSsid = preferences.getString(PREF_WIFI_SSID, "");
         wifiPwd = preferences.getString(PREF_WIFI_PASSWORD, "");
         ntpServer = preferences.getString(PREF_NTP_SERVER, "time.google.com");

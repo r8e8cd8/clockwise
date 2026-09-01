@@ -1,0 +1,11 @@
+{
+  "name": "cw-cf-godwise",
+  "version": "1.0.0",
+  "description": "Godwise custom portrait clockface from user artwork",
+  "keywords": "clockwise, clockface, portrait",
+  "authors": {
+    "name": "Godwise Custom"
+  },
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

@@ -4,6 +4,8 @@
 #include <CWPreferences.h>
 #include "StatusController.h"
 #include "SettingsWebPage.h"
+#include "PokeWebPage.h"
+#include "PokeQueue.h"
 
 #ifndef CLOCKFACE_NAME
   #define CLOCKFACE_NAME "UNKNOWN"
@@ -35,11 +37,44 @@ struct ClockwiseWebServer
     server.stop();
   }
 
+  static String urlDecode(String s) {
+    String out;
+    out.reserve(s.length());
+    for (unsigned i = 0; i < s.length(); i++) {
+      char c = s[i];
+      if (c == '+') {
+        out += ' ';
+      } else if (c == '%' && i + 2 < s.length()) {
+        char h[3] = {s[i + 1], s[i + 2], 0};
+        out += (char)strtol(h, nullptr, 16);
+        i += 2;
+      } else {
+        out += c;
+      }
+    }
+    return out;
+  }
+
+  static String queryGet(const String &query, const String &name) {
+    int start = 0;
+    while (start < (int)query.length()) {
+      int amp = query.indexOf('&', start);
+      if (amp < 0) amp = query.length();
+      int eq = query.indexOf('=', start);
+      if (eq > start && eq < amp) {
+        String k = query.substring(start, eq);
+        String v = query.substring(eq + 1, amp);
+        if (k == name) return urlDecode(v);
+      }
+      start = amp + 1;
+    }
+    return "";
+  }
+
   void handleHttpRequest()
   {
     if (force_restart)
       StatusController::getInstance()->forceRestart();
-
 
     WiFiClient client = server.available();
     if (client)
@@ -62,15 +97,17 @@ struct ClockwiseWebServer
             String path = httpBuffer.substring(method_pos + 1, path_pos);
             String key = "";
             String value = "";
+            String query = "";
 
             if (path.indexOf('?') > 0)
             {
+              query = path.substring(path.indexOf('?') + 1);
               key = path.substring(path.indexOf('?') + 1, path.indexOf('='));
               value = path.substring(path.indexOf('=') + 1);
               path = path.substring(0, path.indexOf('?'));
             }
 
-            processRequest(client, method, path, key, value);
+            processRequest(client, method, path, key, value, query);
             httpBuffer = "";
             break;
           }
@@ -81,13 +118,70 @@ struct ClockwiseWebServer
     }
   }
 
-  void processRequest(WiFiClient client, String method, String path, String key, String value)
+  void processRequest(WiFiClient client, String method, String path, String key, String value, String query = "")
   {
     if (method == "GET" && path == "/") {
       client.println("HTTP/1.0 200 OK");
       client.println("Content-Type: text/html");
       client.println();
       client.println(SETTINGS_PAGE);
+    } else if (method == "GET" && path == "/poke") {
+      String a = query.length() ? queryGet(query, "a") : "";
+      if (a.length() == 0) {
+        client.println("HTTP/1.0 200 OK");
+        client.println("Content-Type: text/html");
+        client.println();
+        client.println(FPSTR(POKE_PAGE));
+      } else {
+        String t = queryGet(query, "t");
+        if (a == "blink") {
+          PokeQueue::get().request(POKE_BLINK);
+        } else if (a == "shy") {
+          PokeQueue::get().request(POKE_SHY);
+        } else if (a == "next") {
+          PokeQueue::get().request(POKE_NEXT);
+        } else if (a == "surprise") {
+          PokeQueue::get().request(POKE_SURPRISE);
+        } else if (a == "sleep") {
+          PokeQueue::get().request(POKE_SLEEP);
+        } else if (a == "wink") {
+          PokeQueue::get().request(POKE_WINK);
+        } else if (a == "heart") {
+          PokeQueue::get().request(POKE_HEART);
+        } else if (a == "peek") {
+          PokeQueue::get().request(POKE_PEEK);
+        } else if (a == "say") {
+          PokeQueue::get().request(POKE_SAY, t.c_str());
+        } else if (a == "lock") {
+          PokeQueue::get().request(POKE_LOCK, t.length() ? t.c_str() : "none");
+        } else if (a == "dn" || a == "daynight") {
+          PokeQueue::get().request(POKE_DAYNIGHT, t.length() ? t.c_str() : "auto");
+        } else if (a == "sec" || a == "seconds") {
+          PokeQueue::get().request(POKE_SECONDS, t.length() ? t.c_str() : "toggle");
+        } else if (a == "gstart" || a == "gcatch") {
+          PokeQueue::get().request(POKE_GAME_CATCH);
+        } else if (a == "gsnake") {
+          PokeQueue::get().request(POKE_GAME_SNAKE);
+        } else if (a == "grhythm") {
+          PokeQueue::get().request(POKE_GAME_RHYTHM);
+        } else if (a == "gquit") {
+          PokeQueue::get().request(POKE_GAME_QUIT);
+        } else if (a == "gleft") {
+          PokeQueue::get().request(POKE_GAME_LEFT);
+        } else if (a == "gright") {
+          PokeQueue::get().request(POKE_GAME_RIGHT);
+        } else if (a == "gup") {
+          PokeQueue::get().request(POKE_GAME_UP);
+        } else if (a == "gdown") {
+          PokeQueue::get().request(POKE_GAME_DOWN);
+        } else if (a == "bye" || a == "leave" || a == "slide") {
+          PokeQueue::get().request(POKE_BYE);
+        } else if (a == "back" || a == "come") {
+          PokeQueue::get().request(POKE_BACK);
+        }
+        client.println("HTTP/1.0 204 No Content");
+        client.println();
+      }
     } else if (method == "GET" && path == "/get") {
       getCurrentSettings(client);
     } else if (method == "GET" && path == "/read") {
@@ -99,14 +193,13 @@ struct ClockwiseWebServer
       force_restart = true;
     } else if (method == "POST" && path == "/set") {
       ClockwiseParams::getInstance()->load();
-      //a baby seal has died due this ifs
       if (key == ClockwiseParams::getInstance()->PREF_DISPLAY_BRIGHT) {
         ClockwiseParams::getInstance()->displayBright = value.toInt();
       } else if (key == ClockwiseParams::getInstance()->PREF_WIFI_SSID) {
         ClockwiseParams::getInstance()->wifiSsid = value;
       } else if (key == ClockwiseParams::getInstance()->PREF_WIFI_PASSWORD) {
         ClockwiseParams::getInstance()->wifiPwd = value;
-      } else if (key == "autoBright") {   //autoBright=0010,0800
+      } else if (key == "autoBright") {
         ClockwiseParams::getInstance()->autoBrightMin = value.substring(0,4).toInt();
         ClockwiseParams::getInstance()->autoBrightMax = value.substring(5,9).toInt();
       } else if (key == ClockwiseParams::getInstance()->PREF_SWAP_BLUE_GREEN) {
@@ -141,23 +234,16 @@ struct ClockwiseWebServer
     }
   }
 
-
-
   void readPin(WiFiClient client, String key, uint16_t pin) {
     ClockwiseParams::getInstance()->load();
-
     client.println("HTTP/1.0 204 No Content");
     client.printf(HEADER_TEMPLATE_D, key, analogRead(pin));
-    
     client.println();
   }
 
-
   void getCurrentSettings(WiFiClient client) {
     ClockwiseParams::getInstance()->load();
-
     client.println("HTTP/1.0 204 No Content");
-
     client.printf(HEADER_TEMPLATE_D, ClockwiseParams::getInstance()->PREF_DISPLAY_BRIGHT, ClockwiseParams::getInstance()->displayBright);
     client.printf(HEADER_TEMPLATE_D, ClockwiseParams::getInstance()->PREF_DISPLAY_ABC_MIN, ClockwiseParams::getInstance()->autoBrightMin);
     client.printf(HEADER_TEMPLATE_D, ClockwiseParams::getInstance()->PREF_DISPLAY_ABC_MAX, ClockwiseParams::getInstance()->autoBrightMax);
@@ -175,11 +261,9 @@ struct ClockwiseWebServer
     client.printf(HEADER_TEMPLATE_D, ClockwiseParams::getInstance()->PREF_DRIVER, ClockwiseParams::getInstance()->driver);
     client.printf(HEADER_TEMPLATE_D, ClockwiseParams::getInstance()->PREF_I2CSPEED, ClockwiseParams::getInstance()->i2cSpeed);
     client.printf(HEADER_TEMPLATE_D, ClockwiseParams::getInstance()->PREF_E_PIN, ClockwiseParams::getInstance()->E_pin);
-
     client.printf(HEADER_TEMPLATE_S, "CW_FW_VERSION", CW_FW_VERSION);
     client.printf(HEADER_TEMPLATE_S, "CW_FW_NAME", CW_FW_NAME);
     client.printf(HEADER_TEMPLATE_S, "CLOCKFACE_NAME", CLOCKFACE_NAME);
     client.println();
   }
-  
 };

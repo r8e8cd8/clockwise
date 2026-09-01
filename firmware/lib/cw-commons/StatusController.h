@@ -174,13 +174,9 @@ struct StatusController
 
 	void blink_led(int d, int times)
 	{
-		for (int j = 0; j < times; j++)
-		{
-			digitalWrite(ESP32_LED_BUILTIN, HIGH);
-			delay(d);
-			digitalWrite(ESP32_LED_BUILTIN, LOW);
-			delay(d);
-		}
+		(void)d;
+		(void)times;
+		// GPIO2 is HUB75 E on this wiring — do not toggle LED
 	}
 
 	void forceRestart()

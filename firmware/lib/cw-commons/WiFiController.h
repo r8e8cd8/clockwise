@@ -14,6 +14,16 @@ struct WiFiController
   long elapsedTimeOffline = 0;
   bool connectionSucessfulOnce;
 
+  static void startMdns()
+  {
+    MDNS.end();
+    if (MDNS.begin("clockwise"))
+    {
+      MDNS.addService("http", "tcp", 80);
+      Serial.println("[WiFi] Open http://clockwise.local/poke");
+    }
+  }
+
   static void onImprovWiFiErrorCb(ImprovTypes::Error err)
   {
     ClockwiseWebServer::getInstance()->stopWebServer();
@@ -28,11 +38,7 @@ struct WiFiController
     ClockwiseParams::getInstance()->save();
 
     ClockwiseWebServer::getInstance()->startWebServer();
-
-    if (MDNS.begin("clockwise"))
-    {
-      MDNS.addService("http", "tcp", 80);
-    }
+    startMdns();
   }
 
   bool isConnected()
@@ -90,6 +96,7 @@ struct WiFiController
       {
         connectionSucessfulOnce = true;
         ClockwiseWebServer::getInstance()->startWebServer();
+        startMdns();
         Serial.printf("[WiFi] Connected to %s, IP address %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
         return true;
       }
