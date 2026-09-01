@@ -1,100 +1,56 @@
-![News GIF](https://github.com/jnthas/clockwise/raw/gh-pages/static/images/news.gif) **[Latest version 1.4.2 released!](https://github.com/jnthas/clockwise/releases/tag/v1.4.2)** | [See full change log](https://github.com/jnthas/clockwise/blob/main/CHANGELOG.md#142---2024-04-21)
+# Godwise 生日时钟
 
-![Clockwise Logo](https://github.com/jnthas/clockwise/blob/gh-pages/static/images/clockwise_logo.png "Clockwise Logo")
+基于 [Clockwise](https://github.com/jnthas/clockwise) 定制的 **64×64 LED 肖像时钟**（生日礼物版）。
 
----
-
-**Clockwise** is an open-source smart wall clock that you can easily build yourself.  
-It only needs:
-
-- 64x64 RGB LED Matrix (HUB75 or HUB75E)
-- ESP32 dev board
-- 5V 3A power supply
-- Jumpers
-
-To simplify assembly, you can also use the [**WiseShield-32 DIY PCB kit**](https://www.elecrow.com/clockwise-diy-kit.html) — created in partnership with Elecrow especially for Clockwise.
+手机打开 `http://clockwise.local/poke` 即可逗她。
 
 ---
 
-## Features
+## 人物与场景
 
-- Real-time clock with customizable themes ("Clockfaces")
-- Web-based interface for configuration
-- Open-source hardware and firmware
-- Compatible with various PCBs or just simple wiring
-- Community-driven
+日常是人物 + 圆表盘；背景会在白天/黑夜池里轮换。
 
----
+![肖像](docs/demo/04_portrait.gif)
 
-## Quick Start
-
-### 1. Required Hardware
-
-If you want to build it from scratch, you will need at least these components below. Follow the instructions on [Wiki]() to assemble it. 
-- 64x64 RGB LED matrix (HUB75 or HUB75E)
-- ESP32 Dev Board
-- 5V 3A power supply
-- Jumpers
-
-Alternatively, we created a custom PCB that simplifies this process a lot. The kit includes not only the PCB but all components including sensors to make your clock smarter. Check the [WiseShield-32 PCB kit](https://www.elecrow.com/clockwise-diy-kit.html) out now!
-
-### 2. Flash Firmware
-
-- Go to: [https://clockwise.page](https://clockwise.page)
-- Follow the on-screen steps to flash Clockwise and configure WiFi
-
-For detailed instructions:  
-👉 [See Wiki: Getting Started](https://github.com/jnthas/clockwise/wiki/%F0%9F%9A%80-Getting-Started)
+![换背景](docs/demo/02_scenes.gif)
 
 ---
 
-## Clockfaces Gallery
+## 眨眼 / 逗她
 
-You can choose from many creative Clockfaces — or make your own:
+网页一点，人物眨眼、害羞、比心、瞌睡……
 
-Mario Bros | Words | World Map | Castlevania | Pacman | Pokedex | Canvas
-:--:|:--:|:--:|:--:|:--:|:--:|:--:
-[![](https://github.com/jnthas/cw-cf-0x01/blob/main/cf_0x01_thumb.jpg)](https://github.com/jnthas/cw-cf-0x01) | [![](https://github.com/jnthas/cw-cf-0x02/blob/main/cf_0x02_thumb.jpg)](https://github.com/jnthas/cw-cf-0x02) | [![](https://github.com/jnthas/cw-cf-0x03/blob/main/cf_0x03_thumb.jpg)](https://github.com/jnthas/cw-cf-0x03) | [![](https://github.com/jnthas/cw-cf-0x04/blob/main/cf_0x04_thumb.jpg)](https://github.com/jnthas/cw-cf-0x04) | [![](https://github.com/jnthas/cw-cf-0x05/blob/main/cf_0x05_thumb.jpg)](https://github.com/jnthas/cw-cf-0x05) | [![](https://github.com/jnthas/cw-cf-0x06/blob/main/cf_0x06_thumb.jpg)](https://github.com/jnthas/cw-cf-0x06) | [![](https://github.com/jnthas/cw-cf-0x07/raw/main/cf_0x07_thumb.jpg)](https://github.com/jnthas/cw-cf-0x07)
+![眨眼](docs/demo/01_blink.gif)
 
-> Canvas is a special type of Clockface that is capable of rendering different themes described in a JSON file. More about **Canvas Clockface**: [Wiki page](https://github.com/jnthas/clockwise/wiki/Canvas-Clockface)
-
----
-
-## How to Build
-
-You can start developing and customizing Clockwise in two different ways:
-
-1. **PlatformIO** — advanced usage for developers  
-2. **ESP-IDF** — for full control  
-
-👉 [Both are described in the Flashing section of the Wiki](https://github.com/jnthas/clockwise/wiki/%F0%9F%92%BE-Flashing-the-Firmware)
+| 按钮 | 效果 |
+|------|------|
+| 眨眼 / 单眼眨 / 偷看 | 眼睛动画 |
+| 害羞 / 比心 / 瞌睡 / 小惊喜 | 表情与特效 |
+| 换背景 | 下一张场景 |
+| 白天 / 黑夜 / 跟随时间 | 强制或自动昼夜 |
+| 显示秒针 | 圆表盘秒针开关 |
+| 自动状态 | 一段时间内按间隔自动触发 |
 
 ---
 
-## Advanced Configuration
+## 请出去 → 数字钟 + 沙漏
 
-Clockwise offers a flexible set of options that you can adjust through its built-in Settings page:
+人物约 **3 秒** 慢慢滑出 → 圆表盘旋转缩小消失 → 背景上的简洁 `HH:MM`；下方沙漏跟着秒走，**每过一分钟换一张背景**。点「请回来」人物再滑回来。
 
-* **WiFi settings** — easily update your network details without reflashing
-* **Timezone & NTP server** — sync the clock accurately for your region
-* **Display brightness** — manual or automatic control (with optional LDR sensor)
-* **Display rotation** — adjust orientation to match your wall setup
-* **Clockface selection** — switch between installed Clockfaces or use Canvas themes
-* **RGB order correction** — fix color mismatch on certain LED matrices
-* **POSIX timezone string** — fine-tune timezone behavior
-
-👉 See the full guide here: [Advanced Configuration Wiki](https://github.com/jnthas/clockwise/wiki/%E2%9A%99%EF%B8%8F-Configuring-Clockwise)
+![滑出与数字钟](docs/demo/03_slide_digital.gif)
 
 ---
 
-## Community & Contributions
+## 本机烧录
 
-- Join the [Clock Club](https://github.com/jnthas/clock-club) to create your own Clockfaces
-- Contributions and pull requests are welcome!  
-👉 [Contributing Guide](https://github.com/jnthas/clockwise/wiki/%F0%9F%A4%9D-Contributing)
+```bash
+cd firmware
+set FW_NAME=GodwisePortrait
+pio run -e esp32dev -t upload --upload-port COMx
+```
+
+依赖见 `firmware/platformio.ini`（含 `huge_app` 分区以装下多场景资源）。
 
 ---
 
-## License
-
-Clockwise is released under the MIT License.
+Fork from [jnthas/clockwise](https://github.com/jnthas/clockwise) · 本仓库：[r8e8cd8/clockwise](https://github.com/r8e8cd8/clockwise)
