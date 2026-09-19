@@ -6,6 +6,7 @@
 #include "SettingsWebPage.h"
 #include "PokeWebPage.h"
 #include "PokeQueue.h"
+#include "SceneBridge.h"
 
 #ifndef CLOCKFACE_NAME
   #define CLOCKFACE_NAME "UNKNOWN"
@@ -182,10 +183,28 @@ struct ClockwiseWebServer
           PokeQueue::get().request(POKE_CALL);
         } else if (a == "fav") {
           PokeQueue::get().request(POKE_FAV, t.length() ? t.c_str() : "toggle");
+        } else if (a == "bg") {
+          PokeQueue::get().request(POKE_BG, t.length() ? t.c_str() : "0");
+        } else if (a == "motto" || (a == "say" && t == "motto")) {
+          PokeQueue::get().request(POKE_MOTTO);
         }
         client.println("HTTP/1.0 204 No Content");
         client.println();
       }
+    } else if (method == "GET" && path == "/bgs") {
+      client.println("HTTP/1.0 200 OK");
+      client.println("Content-Type: text/plain");
+      client.println("Connection: close");
+      client.println();
+      client.print(SceneBridge::count());
+      client.print(',');
+      client.print(SceneBridge::current());
+    } else if (method == "GET" && path == "/bg") {
+      int idx = query.length() ? queryGet(query, "i").toInt() : 0;
+      if (idx < 0) idx = 0;
+      SceneBridge::writeBmp(client, (uint8_t)idx);
+    } else if (method == "GET" && path == "/screen") {
+      SceneBridge::writeScreen(client);
     } else if (method == "GET" && path == "/get") {
       getCurrentSettings(client);
     } else if (method == "GET" && path == "/read") {

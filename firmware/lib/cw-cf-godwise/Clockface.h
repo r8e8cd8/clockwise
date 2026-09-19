@@ -41,6 +41,8 @@ class Clockface : public IClockface {
   uint8_t _effect;
   char _bubble[28];
   bool _bubbleOn;
+  bool _mottoOn;
+  unsigned long _mottoUntilMs;
   uint8_t _moodLock;  // 0=none, else which action to auto-fire
   unsigned long _moodLockUntilMs;   // end of large time window
   unsigned long _moodLockNextMs;    // next auto trigger
@@ -123,6 +125,9 @@ class Clockface : public IClockface {
   void clearEffectArt();
   void clearBubbleArea();
   void drawBubble();
+  void drawMotto();
+  void showMotto(unsigned long now);
+  void drawMottoGlyph(int x, int y, uint8_t glyphIdx, uint16_t color);
   void drawChar5x7(int x, int y, char ch, uint16_t color);
   void drawText5x7(int x, int y, const char* s, uint16_t color);
   void spawnSurpriseFx();
@@ -181,6 +186,8 @@ class Clockface : public IClockface {
  public:
   Clockface(Adafruit_GFX* display);
   void setup(CWDateTime* dateTime);
+  void selectScene(uint8_t idx);
+  uint8_t sceneIndex() const { return _sceneIdx; }
   void update();
   void externalEvent(int type);
 };

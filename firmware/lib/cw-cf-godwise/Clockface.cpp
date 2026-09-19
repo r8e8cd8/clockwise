@@ -1,7 +1,11 @@
 #include "Clockface.h"
+#include "motto_font.h"
 #include <PokeQueue.h>
+#include <SceneBridge.h>
+#include <MirrorGFX.h>
 #include <CWPreferences.h>
 #include <Preferences.h>
+#include <WiFi.h>
 #include <math.h>
 #include <string.h>
 #include <ctype.h>
@@ -78,7 +82,10 @@ static int fontIndex(char ch) {
   return 37;
 }
 
+Clockface* gClockface = nullptr;
+
 Clockface::Clockface(Adafruit_GFX* display) {
+  gClockface = this;
   _display = display;
   _dateTime = nullptr;
   _lastAnimMs = 0;
@@ -98,6 +105,8 @@ Clockface::Clockface(Adafruit_GFX* display) {
   _effect = 0;
   _bubble[0] = 0;
   _bubbleOn = false;
+  _mottoOn = false;
+  _mottoUntilMs = 0;
   _moodLock = 0;
   _moodLockUntilMs = 0;
   _moodLockNextMs = 0;
@@ -195,6 +204,18 @@ void Clockface::advanceScene() {
   _nextSceneMs = millis() + SCENE_MS;
 }
 
+void Clockface::selectScene(uint8_t idx) {
+  if (idx >= SCENE_COUNT) return;
+  _sceneIdx = idx;
+  bool day = idx < DAY_SCENE_COUNT;
+  _wasDay = day;
+  _poolIdx = day ? idx : (uint8_t)(idx - DAY_SCENE_COUNT);
+  _blinkFrame = -1;
+  if (_effect == 0) _bubbleOn = false;
+  drawFullFrame();
+  _nextSceneMs = millis() + SCENE_MS;
+}
+
 void Clockface::drawFullFrame() {
   if (_slideMode == 3 || _slideMode == 5) {
     drawDigitalClock();
@@ -219,7 +240,8 @@ void Clockface::drawFullFrame() {
   applyBlinkFrame(_blinkFrame);
   drawBlush(_blushLevel);
   drawTimeAnalog(false);
-  if (_bubbleOn) drawBubble();
+  if (_mottoOn) drawMotto();
+  else if (_bubbleOn) drawBubble();
 }
 
 void Clockface::setup(CWDateTime* dateTime) {
@@ -701,7 +723,19 @@ void Clockface::handlePoke(unsigned long now) {
   }
 
   // During schedule window still allow next / say / lock / day / sec / slide
-  if (_moodLock && a != POKE_NEXT && a != POKE_SAY) {
+  if (_moodLock && a != POKE_NEXT && a != POKE_SAY && a != POKE_BG && a != POKE_MOTTO) {
+    return;
+  }
+
+  if (a == POKE_MOTTO) {
+    showMotto(now);
+    return;
+  }
+
+  if (a == POKE_BG) {
+    int idx = atoi(msg);
+    if (idx < 0) idx = 0;
+    selectScene((uint8_t)idx);
     return;
   }
 
@@ -872,6 +906,10 @@ void Clockface::tickAnimation(unsigned long now) {
     clearBubbleArea();
     drawTimeAnalog(true);
   }
+  if (_mottoOn && now >= _mottoUntilMs) {
+    _mottoOn = false;
+    drawFullFrame();
+  }
 
   if (_effect != 0 && now >= _effectUntilMs) {
     clearEffectArt();
@@ -879,7 +917,8 @@ void Clockface::tickAnimation(unsigned long now) {
       restoreEyes();
       drawBlush(_blushLevel);
     }
-    if (_bubbleOn) drawBubble();
+    if (_mottoOn) drawMotto();
+    else if (_bubbleOn) drawBubble();
     _effect = 0;
     _blushLevel = 1;
   }
@@ -1217,6 +1256,49 @@ void Clockface::drawBubble() {
   int x = (64 - w) / 2;
   if (x < 2) x = 2;
   drawText5x7(x, 55, shown, COL_BUBBLE);
+}
+
+void Clockface::drawMottoGlyph(int x, int y, uint8_t glyphIdx, uint16_t color) {
+  if (glyphIdx >= MOTTO_GLYPH_COUNT) return;
+  Adafruit_GFX* d = Locator::getDisplay();
+  for (int yy = 0; yy < MOTTO_GLYPH_H; yy++) {
+    uint16_t bits = pgm_read_word(&MOTTO_GLYPHS[glyphIdx][yy]);
+    for (int xx = 0; xx < MOTTO_GLYPH_W; xx++) {
+      if (bits & (1 << (15 - xx))) {
+        int px = x + xx;
+        int py = y + yy;
+        if (px >= 0 && px < 64 && py >= 0 && py < 64) d->drawPixel(px, py, color);
+      }
+    }
+  }
+}
+
+void Clockface::drawMotto() {
+  Adafruit_GFX* d = Locator::getDisplay();
+  for (int y = 22; y <= 49; y++) {
+    for (int x = 0; x < 64; x++) d->drawPixel(x, y, 0x0841);
+  }
+  // line1: 想做的我
+  static const uint8_t line1[] = {0, 1, 2, 3};
+  int x = 6;
+  for (uint8_t i = 0; i < 4; i++) {
+    drawMottoGlyph(x, 24, line1[i], COL_BUBBLE);
+    x += MOTTO_GLYPH_W + 1;
+  }
+  // line2: 就去做
+  static const uint8_t line2[] = {4, 5, 1};
+  x = 13;
+  for (uint8_t i = 0; i < 3; i++) {
+    drawMottoGlyph(x, 37, line2[i], COL_BUBBLE);
+    x += MOTTO_GLYPH_W + 1;
+  }
+}
+
+void Clockface::showMotto(unsigned long now) {
+  _bubbleOn = false;
+  _mottoOn = true;
+  _mottoUntilMs = now + 7000;
+  if (_slideMode == 0) drawMotto();
 }
 
 void Clockface::drawHeart(int x, int y, uint16_t color) {
@@ -1676,4 +1758,104 @@ void Clockface::rhythmTick(unsigned long now) {
     }
   }
   rhythmDraw();
+}
+
+uint8_t SceneBridge::current() {
+  return gClockface ? gClockface->sceneIndex() : 0;
+}
+
+uint8_t SceneBridge::count() {
+  return SCENE_COUNT;
+}
+
+void SceneBridge::select(uint8_t idx) {
+  if (gClockface) gClockface->selectScene(idx);
+}
+
+void SceneBridge::writeBmp(WiFiClient &client, uint8_t idx) {
+  if (idx >= SCENE_COUNT) idx = 0;
+  const int w = 64;
+  const int h = 64;
+  const int rowBytes = w * 3;
+  const int pixels = rowBytes * h;
+  const int fileSize = 54 + pixels;
+  uint8_t hdr[54];
+  memset(hdr, 0, sizeof(hdr));
+  hdr[0] = 'B';
+  hdr[1] = 'M';
+  hdr[2] = (uint8_t)(fileSize);
+  hdr[3] = (uint8_t)(fileSize >> 8);
+  hdr[4] = (uint8_t)(fileSize >> 16);
+  hdr[5] = (uint8_t)(fileSize >> 24);
+  hdr[10] = 54;
+  hdr[14] = 40;
+  hdr[18] = (uint8_t)w;
+  hdr[19] = (uint8_t)(w >> 8);
+  hdr[22] = (uint8_t)h;
+  hdr[23] = (uint8_t)(h >> 8);
+  hdr[26] = 1;
+  hdr[28] = 24;
+
+  client.print("HTTP/1.0 200 OK\r\nContent-Type: image/bmp\r\nContent-Length: ");
+  client.print(fileSize);
+  client.print("\r\nConnection: close\r\n\r\n");
+  client.write(hdr, 54);
+
+  uint8_t line[192];
+  for (int y = h - 1; y >= 0; --y) {
+    for (int x = 0; x < w; ++x) {
+      uint16_t c = pgm_read_word(&PORTRAIT_SCENES[idx][y * 64 + x]);
+      uint8_t r = (uint8_t)(((c >> 11) & 31) << 3);
+      uint8_t g = (uint8_t)(((c >> 5) & 63) << 2);
+      uint8_t b = (uint8_t)((c & 31) << 3);
+      line[x * 3] = b;
+      line[x * 3 + 1] = g;
+      line[x * 3 + 2] = r;
+    }
+    client.write(line, rowBytes);
+  }
+}
+
+void SceneBridge::writeScreen(WiFiClient &client) {
+  const int w = 64;
+  const int h = 64;
+  const int rowBytes = w * 3;
+  const int pixels = rowBytes * h;
+  const int fileSize = 54 + pixels;
+  uint8_t hdr[54];
+  memset(hdr, 0, sizeof(hdr));
+  hdr[0] = 'B';
+  hdr[1] = 'M';
+  hdr[2] = (uint8_t)(fileSize);
+  hdr[3] = (uint8_t)(fileSize >> 8);
+  hdr[4] = (uint8_t)(fileSize >> 16);
+  hdr[5] = (uint8_t)(fileSize >> 24);
+  hdr[10] = 54;
+  hdr[14] = 40;
+  hdr[18] = (uint8_t)w;
+  hdr[19] = (uint8_t)(w >> 8);
+  hdr[22] = (uint8_t)h;
+  hdr[23] = (uint8_t)(h >> 8);
+  hdr[26] = 1;
+  hdr[28] = 24;
+
+  client.print("HTTP/1.0 200 OK\r\nContent-Type: image/bmp\r\nContent-Length: ");
+  client.print(fileSize);
+  client.print("\r\nConnection: close\r\n\r\n");
+  client.write(hdr, 54);
+
+  const uint16_t *snap = MirrorGFX::instance ? MirrorGFX::instance->pixels() : nullptr;
+  uint8_t line[192];
+  for (int y = h - 1; y >= 0; --y) {
+    for (int x = 0; x < w; ++x) {
+      uint16_t c = snap ? snap[y * 64 + x] : 0;
+      uint8_t r = (uint8_t)(((c >> 11) & 31) << 3);
+      uint8_t g = (uint8_t)(((c >> 5) & 63) << 2);
+      uint8_t b = (uint8_t)((c & 31) << 3);
+      line[x * 3] = b;
+      line[x * 3 + 1] = g;
+      line[x * 3 + 2] = r;
+    }
+    client.write(line, rowBytes);
+  }
 }

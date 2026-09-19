@@ -10,6 +10,7 @@
 #include <CWWebServer.h>
 #include <StatusController.h>
 #include <birthday_boot.h>
+#include <MirrorGFX.h>
 
 #define MIN_BRIGHT_DISPLAY_ON 4
 #define MIN_BRIGHT_DISPLAY_OFF 0
@@ -17,6 +18,8 @@
 #define ESP32_LED_BUILTIN 2
 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
+MirrorGFX *mirror_display = nullptr;
+MirrorGFX *MirrorGFX::instance = nullptr;
 
 Clockface *clockface;
 
@@ -197,7 +200,8 @@ void setup()
   p->save();
 
   displaySetup(false, false, p->displayBright, p->displayRotation, p->driver, p->i2cSpeed, PANEL_E_PIN);
-  clockface = new Clockface(dma_display);
+  mirror_display = new MirrorGFX(dma_display);
+  clockface = new Clockface(mirror_display);
 
   Serial.printf("[LDR] pin=GPIO%u enabled=%d min=%u max=%u\n",
                 p->ldrPin, (p->autoBrightMax > 0) ? 1 : 0, p->autoBrightMin, p->autoBrightMax);
