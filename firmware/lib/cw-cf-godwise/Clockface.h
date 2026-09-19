@@ -50,14 +50,22 @@ class Clockface : public IClockface {
   int _lastSecond;
 
   // character slide + clock morph
-  // 0 home | 1 leaving | 2 dialVanish | 3 digital | 4 returning
+  // 0 home | 1 leaving | 2 dialVanish | 3 digital | 4 returning | 5 calling
   int8_t _charOx;
   int8_t _charOy;
   int8_t _slideMode;
+  int8_t _slideDir;   // +1 leave right, -1 leave left
   unsigned long _slideTickMs;
   int8_t _dialAnimR;
   int16_t _dialAnimRot;
   bool _digitalColon;
+  uint8_t _callFrame;
+  unsigned long _callUntilMs;
+
+  // favorite backgrounds (persisted)
+  static const uint8_t FAV_BYTES = 8;  // up to 64 scenes
+  uint8_t _favBits[FAV_BYTES];
+  bool _favOnly;
 
   // games
   uint8_t _gameMode;
@@ -131,13 +139,24 @@ class Clockface : public IClockface {
   void clearMoodLock(unsigned long now);
   void setDayMode(uint8_t mode);
   void setShowSeconds(bool on);
-  void startSlideLeave();
+  void startSlideLeave(int8_t dir);
   void startSlideBack();
+  void startCall();
   void tickSlide(unsigned long now);
   void beginDialVanish();
   void enterDigitalMode();
   bool charVisible() const;
   bool inPortraitUi() const;
+
+  void loadFavorites();
+  void saveFavorites();
+  bool isFavorite(uint8_t idx) const;
+  void setFavorite(uint8_t idx, bool on);
+  void toggleFavoriteCurrent();
+  void setFavOnly(bool on);
+  uint8_t countFavoritesInPool(uint8_t base, uint8_t count) const;
+  bool nextFavoriteInPool(uint8_t base, uint8_t count, uint8_t& outPoolIdx) const;
+  void drawCallOverlay();
 
   void gameStart(uint8_t mode);
   void gameQuit();

@@ -1,6 +1,7 @@
 #include "Clockface.h"
 #include <PokeQueue.h>
 #include <CWPreferences.h>
+#include <Preferences.h>
 #include <math.h>
 #include <string.h>
 #include <ctype.h>
@@ -107,10 +108,15 @@ Clockface::Clockface(Adafruit_GFX* display) {
   _charOx = 0;
   _charOy = 0;
   _slideMode = 0;
+  _slideDir = 1;
   _slideTickMs = 0;
   _dialAnimR = DIAL_R;
   _dialAnimRot = 0;
   _digitalColon = true;
+  _callFrame = 0;
+  _callUntilMs = 0;
+  memset(_favBits, 0, sizeof(_favBits));
+  _favOnly = false;
   _gameTickMs = 0;
   _gameMode = GM_OFF;
   _gameOver = false;
@@ -172,7 +178,13 @@ void Clockface::advanceScene() {
   uint8_t count = day ? DAY_SCENE_COUNT : NIGHT_SCENE_COUNT;
   uint8_t base = day ? 0 : DAY_SCENE_COUNT;
   if (count == 0) return;
-  _poolIdx = (_poolIdx + 1) % count;
+
+  uint8_t nextPool = 0;
+  if (_favOnly && nextFavoriteInPool(base, count, nextPool)) {
+    _poolIdx = nextPool;
+  } else {
+    _poolIdx = (_poolIdx + 1) % count;
+  }
   _sceneIdx = base + _poolIdx;
   _wasDay = day;
   _blinkFrame = -1;
@@ -184,13 +196,14 @@ void Clockface::advanceScene() {
 }
 
 void Clockface::drawFullFrame() {
-  if (_slideMode == 3) {
+  if (_slideMode == 3 || _slideMode == 5) {
     drawDigitalClock();
+    if (_slideMode == 5) drawCallOverlay();
     return;
   }
   if (_slideMode == 2) {
     int8_t savedOx = _charOx;
-    _charOx = 80;
+    _charOx = (_slideDir >= 0) ? 80 : -80;
     drawPortraitRegion(0, 0, 64, 64, false);
     _charOx = savedOx;
     drawDialMorph();
@@ -198,7 +211,6 @@ void Clockface::drawFullFrame() {
   }
 
   if (_slideMode == 1 || _slideMode == 4) {
-    // Skip dial box so the corner clock is never wiped/redrawn (no flicker)
     drawPortraitRegion(0, 0, 64, 64, true);
     return;
   }
@@ -212,6 +224,7 @@ void Clockface::drawFullFrame() {
 
 void Clockface::setup(CWDateTime* dateTime) {
   _dateTime = dateTime;
+  loadFavorites();
   Locator::getDisplay()->fillScreen(BG_COLOR);
   _poolIdx = 0;
   _wasDay = isDayHour(_dateTime->getHour());
@@ -300,15 +313,103 @@ void Clockface::setShowSeconds(bool on) {
 }
 
 bool Clockface::charVisible() const {
-  return _slideMode != 2 && _slideMode != 3 && _charOx < 56 && _charOx > -56;
+  return _slideMode != 2 && _slideMode != 3 && _slideMode != 5 &&
+         _charOx < 56 && _charOx > -56;
 }
 
 bool Clockface::inPortraitUi() const {
   return _slideMode == 0;
 }
 
-void Clockface::startSlideLeave() {
-  if (_slideMode == 1 || _slideMode == 2 || _slideMode == 3) return;
+void Clockface::loadFavorites() {
+  Preferences p;
+  p.begin("godwise", true);
+  p.getBytes("fav", _favBits, sizeof(_favBits));
+  _favOnly = p.getBool("favOnly", false);
+  p.end();
+}
+
+void Clockface::saveFavorites() {
+  Preferences p;
+  p.begin("godwise", false);
+  p.putBytes("fav", _favBits, sizeof(_favBits));
+  p.putBool("favOnly", _favOnly);
+  p.end();
+}
+
+bool Clockface::isFavorite(uint8_t idx) const {
+  if (idx >= SCENE_COUNT) return false;
+  return (_favBits[idx >> 3] >> (idx & 7)) & 1;
+}
+
+void Clockface::setFavorite(uint8_t idx, bool on) {
+  if (idx >= SCENE_COUNT) return;
+  if (on) _favBits[idx >> 3] |= (1 << (idx & 7));
+  else _favBits[idx >> 3] &= ~(1 << (idx & 7));
+  saveFavorites();
+}
+
+void Clockface::toggleFavoriteCurrent() {
+  bool on = !isFavorite(_sceneIdx);
+  setFavorite(_sceneIdx, on);
+  // tiny feedback bubble
+  strncpy(_bubble, on ? "Fav!" : "Unfav", sizeof(_bubble) - 1);
+  _bubble[sizeof(_bubble) - 1] = 0;
+  _bubbleOn = true;
+  _bubbleUntilMs = millis() + 1500;
+  if (_slideMode == 0) drawBubble();
+}
+
+void Clockface::setFavOnly(bool on) {
+  _favOnly = on;
+  saveFavorites();
+  strncpy(_bubble, on ? "FavOnly" : "AllBg", sizeof(_bubble) - 1);
+  _bubble[sizeof(_bubble) - 1] = 0;
+  _bubbleOn = true;
+  _bubbleUntilMs = millis() + 1500;
+  if (_slideMode == 0) drawBubble();
+}
+
+uint8_t Clockface::countFavoritesInPool(uint8_t base, uint8_t count) const {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < count; i++) {
+    if (isFavorite(base + i)) n++;
+  }
+  return n;
+}
+
+bool Clockface::nextFavoriteInPool(uint8_t base, uint8_t count, uint8_t& outPoolIdx) const {
+  if (countFavoritesInPool(base, count) == 0) return false;
+  for (uint8_t step = 1; step <= count; step++) {
+    uint8_t cand = (_poolIdx + step) % count;
+    if (isFavorite(base + cand)) {
+      outPoolIdx = cand;
+      return true;
+    }
+  }
+  return false;
+}
+
+void Clockface::drawCallOverlay() {
+  Adafruit_GFX* d = Locator::getDisplay();
+  // knock marks on the side she left toward
+  int edge = (_slideDir >= 0) ? 60 : 2;
+  uint16_t col = 0xFFFF;
+  int phase = _callFrame % 4;
+  for (int i = 0; i < 3; i++) {
+    int y = 22 + i * 8;
+    int x = edge + ((_slideDir >= 0) ? -phase : phase);
+    d->drawPixel(x, y, col);
+    d->drawPixel(x + (_slideDir >= 0 ? -1 : 1), y + 1, col);
+  }
+  // "Hey!" near bottom
+  drawText5x7(20, 54, "Hey!", col);
+}
+
+void Clockface::startSlideLeave(int8_t dir) {
+  if (dir == 0) dir = 1;
+  _slideDir = (dir < 0) ? -1 : 1;
+  if (_slideMode == 1 || _slideMode == 2 || _slideMode == 3 || _slideMode == 5) return;
   if (_slideMode == 4) {
     _slideMode = 1;
     _slideTickMs = millis();
@@ -320,9 +421,10 @@ void Clockface::startSlideLeave() {
     _effect = 0;
   }
   _blinkFrame = -1;
-  // paint dial once, then freeze it while character walks
   drawPortraitRegion(0, 0, 64, 64, false);
   drawTimeAnalog(false);
+  _charOx = 0;
+  _charOy = 0;
   _slideMode = 1;
   _slideTickMs = millis();
 }
@@ -334,22 +436,46 @@ void Clockface::startSlideBack() {
     _slideTickMs = millis();
     return;
   }
+  if (_slideMode == 5) {
+    _slideMode = 3;  // cancel call overlay first
+  }
   _slideMode = 4;
-  _charOx = 64;
+  // enter from the side she left toward
+  _charOx = (_slideDir >= 0) ? 64 : -64;
   _charOy = 6;
   _dialAnimR = DIAL_R;
   _dialAnimRot = 0;
   _slideTickMs = millis();
-  // bg + dial once, then freeze dial while walking back
-  int8_t saved = _charOx;
   drawPortraitRegion(0, 0, 64, 64, false);
-  _charOx = saved;
   drawTimeAnalog(false);
+}
+
+void Clockface::startCall() {
+  // Only meaningful when she's away on digital clock
+  if (_slideMode != 3 && _slideMode != 5) {
+    // if home, just do a peek + bubble as "calling attention"
+    if (_slideMode == 0) {
+      strncpy(_bubble, "Hey!", sizeof(_bubble) - 1);
+      _bubble[sizeof(_bubble) - 1] = 0;
+      _bubbleOn = true;
+      _bubbleUntilMs = millis() + 2500;
+      _effect = POKE_PEEK;
+      _effectUntilMs = millis() + 1600;
+      applyPeekEyes();
+      drawBubble();
+    }
+    return;
+  }
+  _slideMode = 5;
+  _callFrame = 0;
+  _callUntilMs = millis() + 1800;
+  _slideTickMs = millis();
+  drawFullFrame();
 }
 
 void Clockface::beginDialVanish() {
   _slideMode = 2;
-  _charOx = 64;
+  _charOx = (_slideDir >= 0) ? 64 : -64;
   _charOy = 8;
   _dialAnimR = DIAL_R;
   _dialAnimRot = 0;
@@ -359,33 +485,46 @@ void Clockface::beginDialVanish() {
 
 void Clockface::enterDigitalMode() {
   _slideMode = 3;
-  _charOx = 64;
+  _charOx = (_slideDir >= 0) ? 64 : -64;
   _digitalColon = true;
-  _lastHour = -1;  // force digital redraw
+  _lastHour = -1;
   _lastMinute = -1;
   _lastSecond = -1;
   drawDigitalClock();
 }
 
 void Clockface::tickSlide(unsigned long now) {
+  if (_slideMode == 5) {
+    if (now - _slideTickMs >= 120) {
+      _slideTickMs = now;
+      _callFrame++;
+      drawFullFrame();
+    }
+    if (now >= _callUntilMs) {
+      startSlideBack();
+    }
+    return;
+  }
+
   if (_slideMode == 1 || _slideMode == 4) {
-    // ~3s across: 1px / 47ms
     if (now - _slideTickMs < 47) return;
     _slideTickMs = now;
 
     if (_slideMode == 1) {
-      _charOx = (int8_t)(_charOx + 1);
+      _charOx = (int8_t)(_charOx + _slideDir);
       if ((_charOx & 3) == 0 && _charOy < 6) _charOy++;
-      if (_charOx >= 64) {
-        _charOx = 64;
+      bool gone = (_slideDir >= 0) ? (_charOx >= 64) : (_charOx <= -64);
+      if (gone) {
+        _charOx = (_slideDir >= 0) ? 64 : -64;
         beginDialVanish();
         return;
       }
     } else {
-      _charOx = (int8_t)(_charOx - 1);
-      if (_charOy > 0 && (_charOx & 3) == 0) _charOy--;
-      if (_charOx <= 0) {
-        _charOx = 0;
+      // walk back toward 0
+      if (_charOx > 0) _charOx--;
+      else if (_charOx < 0) _charOx++;
+      if (_charOy > 0 && ((_charOx & 3) == 0)) _charOy--;
+      if (_charOx == 0) {
         _charOy = 0;
         _slideMode = 0;
         _dialAnimR = DIAL_R;
@@ -409,10 +548,6 @@ void Clockface::tickSlide(unsigned long now) {
     }
     drawFullFrame();
     return;
-  }
-
-  if (_slideMode == 3) {
-    // colon blink + time refresh handled in tickAnimation
   }
 }
 
@@ -534,11 +669,34 @@ void Clockface::handlePoke(unsigned long now) {
     return;
   }
   if (a == POKE_BYE) {
-    startSlideLeave();
+    int8_t dir = 1;
+    if (!strcmp(msg, "left") || !strcmp(msg, "l") || !strcmp(msg, "-1")) dir = -1;
+    startSlideLeave(dir);
     return;
   }
   if (a == POKE_BACK) {
     startSlideBack();
+    return;
+  }
+  if (a == POKE_CALL) {
+    startCall();
+    return;
+  }
+  if (a == POKE_FAV) {
+    if (!strcmp(msg, "only")) {
+      setFavOnly(true);
+    } else if (!strcmp(msg, "all")) {
+      setFavOnly(false);
+    } else if (!strcmp(msg, "next")) {
+      // force advance among favorites for this press
+      bool prev = _favOnly;
+      _favOnly = true;
+      advanceScene();
+      _favOnly = prev;
+    } else {
+      // toggle current background
+      toggleFavoriteCurrent();
+    }
     return;
   }
 
@@ -635,22 +793,25 @@ void Clockface::tickAnimation(unsigned long now) {
 
   tickSlide(now);
 
-  if (_slideMode == 3) {
+  if (_slideMode == 3 || _slideMode == 5) {
     bool minuteChanged = (h != _lastHour || m != _lastMinute);
     bool timeChanged = minuteChanged || (s != _lastSecond);
-    // colon blink ~1.2s period
     if (timeChanged || (now - _slideTickMs >= 1200)) {
-      if (now - _slideTickMs >= 1200) {
+      if (_slideMode == 3 && now - _slideTickMs >= 1200) {
         _digitalColon = !_digitalColon;
         _slideTickMs = now;
       }
-      // hourglass finished a minute → next background
-      if (minuteChanged && _lastMinute >= 0) {
+      if (minuteChanged && _lastMinute >= 0 && _slideMode == 3) {
         bool day = isDayHour(h);
         uint8_t count = day ? DAY_SCENE_COUNT : NIGHT_SCENE_COUNT;
         uint8_t base = day ? 0 : DAY_SCENE_COUNT;
         if (count > 0) {
-          _poolIdx = (_poolIdx + 1) % count;
+          uint8_t nextPool = 0;
+          if (_favOnly && nextFavoriteInPool(base, count, nextPool)) {
+            _poolIdx = nextPool;
+          } else {
+            _poolIdx = (_poolIdx + 1) % count;
+          }
           _sceneIdx = base + _poolIdx;
           _wasDay = day;
         }
@@ -658,7 +819,7 @@ void Clockface::tickAnimation(unsigned long now) {
       _lastHour = h;
       _lastMinute = m;
       _lastSecond = s;
-      drawDigitalClock();
+      drawFullFrame();
     }
     return;
   }

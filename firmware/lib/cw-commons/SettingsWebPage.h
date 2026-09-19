@@ -23,7 +23,7 @@ const char SETTINGS_PAGE[] PROGMEM = R""""(
 
   <div class="w3-bar w3-black w3-medium">
     <div id="fw-version" class="w3-bar-item w3-black w3-hover-red"></div>
-    <a class="w3-bar-item w3-button w3-hover-pink" href="/poke">逗她</a>
+    <a class="w3-bar-item w3-button w3-hover-pink" href="/poke">遥控</a>
     <div id="ssid" class="w3-bar-item w3-hover-blue w3-right"></div>
     <div class="w3-bar-item w3-button w3-hover-yellow w3-right" onclick="restartDevice();"><i class='fa fa-power-off'></i> Restart</div>
     <div id="status" class="w3-bar-item w3-green" style="display:none"><i class='fa fa-floppy-o'></i> Saved! Restart your device</div>
@@ -103,17 +103,17 @@ const char SETTINGS_PAGE[] PROGMEM = R""""(
           property: "ntpServer"
         },
         {
-          title: "Automatic Bright",
-          description: "Inform the values read by the LDR when the room is dark (min value) and bright (max value). Range 0 - 4095",
-          formInput: "<input id='autoBrightMin' class='w3-input w3-light-grey w3-cell w3-margin-right' name='autoBrightMin' style='width:45%;' type='number' min='0' max='4095' placeholder='Min value' value='" + settings.autobrightmin + "'>" + 
-                     "<input id='autoBrightMax' class='w3-input w3-light-grey w3-cell' name='autoBrightMax' style='width:45%;' type='number' min='0' max='4095' placeholder='Max value' value='" + settings.autobrightmax + "'>",
+          title: "自动亮度 (LDR 503)",
+          description: "先下方读 Pin，再填：暗环境=Min、亮环境=Max（0–4095）。Max 必须 >0 才会启用；填 0 关闭。接 AO→GPIO35，VCC 优先 3.3V。",
+          formInput: "<input id='autoBrightMin' class='w3-input w3-light-grey w3-cell w3-margin-right' name='autoBrightMin' style='width:45%;' type='number' min='0' max='4095' placeholder='暗 Min' value='" + settings.autobrightmin + "'>" + 
+                     "<input id='autoBrightMax' class='w3-input w3-light-grey w3-cell' name='autoBrightMax' style='width:45%;' type='number' min='0' max='4095' placeholder='亮 Max' value='" + settings.autobrightmax + "'>",
           icon: "fa-sun-o",
           save: "updatePreference('autoBright', autoBrightMin.value.padStart(4, '0') + ',' + autoBrightMax.value.padStart(4, '0'))",
           property: "autoBright"
         },
         {
-          title: "LDR Pin",
-          description: "The GPIO pin where the LDR is connected to. Use just the numeric value (default: 35) | <a href='#' onclick='readPin(ldrPin.value);'>Read Pin: </a><strong id='ldrPinRead'>0</strong>",
+          title: "光敏脚 LDR Pin",
+          description: "AO 接的 GPIO 数字（默认 35） | <a href='#' onclick='readPin(ldrPin.value);'>点此读数: </a><strong id='ldrPinRead'>0</strong>（遮住应变小/变大）",
           formInput: "<input id='ldrPin' class='w3-input w3-light-grey' name='ldrPin' type='number' min='0' max='39' value='" + settings.ldrpin + "'>",
           icon: "fa-microchip",
           save: "updatePreference('ldrPin', ldrPin.value)",

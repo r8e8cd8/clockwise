@@ -79,10 +79,24 @@ struct WiFiController
     return success;
   }
 
+  // Home LAN static IP (was previously assigned by DHCP as .93)
+  static void applyStaticIp()
+  {
+    IPAddress local(192, 168, 3, 93);
+    IPAddress gateway(192, 168, 3, 1);
+    IPAddress subnet(255, 255, 255, 0);
+    IPAddress dns(192, 168, 3, 1);
+    if (!WiFi.config(local, gateway, subnet, dns))
+      Serial.println("[WiFi] Static IP config failed");
+    else
+      Serial.println("[WiFi] Static IP 192.168.3.93");
+  }
+
   bool begin()
   {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+    applyStaticIp();
 
     improvSerial.setDeviceInfo(ImprovTypes::ChipFamily::CF_ESP32, CW_FW_NAME, CW_FW_VERSION, "Clockwise");
     improvSerial.onImprovError(onImprovWiFiErrorCb);
@@ -98,6 +112,7 @@ struct WiFiController
         ClockwiseWebServer::getInstance()->startWebServer();
         startMdns();
         Serial.printf("[WiFi] Connected to %s, IP address %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+        Serial.println("[WiFi] Open http://192.168.3.93/poke");
         return true;
       }
     }      

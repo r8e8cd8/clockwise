@@ -23,7 +23,6 @@ Clockface *clockface;
 WiFiController wifi;
 CWDateTime cwDateTime;
 
-bool autoBrightEnabled;
 long autoBrightMillis = 0;
 uint8_t currentBrightSlot = -1;
 
@@ -141,27 +140,30 @@ void displaySetup(bool swapBlueGreen, bool swapBlueRed, uint8_t displayBright, u
 
 void automaticBrightControl()
 {
-  if (autoBrightEnabled) {
-    if (millis() - autoBrightMillis > 3000)
-    {
-      int16_t currentValue = analogRead(ClockwiseParams::getInstance()->ldrPin);
+  // autoBrightMax > 0 means calibrated / enabled (live, no reboot needed)
+  auto *p = ClockwiseParams::getInstance();
+  if (p->autoBrightMax == 0) return;
 
-      uint16_t ldrMin = ClockwiseParams::getInstance()->autoBrightMin;
-      uint16_t ldrMax = ClockwiseParams::getInstance()->autoBrightMax;
+  if (millis() - autoBrightMillis > 3000)
+  {
+    int16_t currentValue = analogRead(p->ldrPin);
 
-      const uint8_t minBright = (currentValue < ldrMin ? MIN_BRIGHT_DISPLAY_OFF : MIN_BRIGHT_DISPLAY_ON);
-      uint8_t maxBright = ClockwiseParams::getInstance()->displayBright;
+    uint16_t ldrMin = p->autoBrightMin;
+    uint16_t ldrMax = p->autoBrightMax;
+    if (ldrMax <= ldrMin) ldrMax = ldrMin + 1;
 
-      uint8_t slots = 10;
-      uint8_t mapLDR = map(currentValue > ldrMax ? ldrMax : currentValue, ldrMin, ldrMax, 1, slots);
-      uint8_t mapBright = map(mapLDR, 1, slots, minBright, maxBright);
+    const uint8_t minBright = (currentValue < ldrMin ? MIN_BRIGHT_DISPLAY_OFF : MIN_BRIGHT_DISPLAY_ON);
+    uint8_t maxBright = p->displayBright;
 
-      if (abs(currentBrightSlot - mapLDR) >= 2 || mapBright == 0) {
-        dma_display->setBrightness8(mapBright);
-        currentBrightSlot = mapLDR;
-      }
-      autoBrightMillis = millis();
+    uint8_t slots = 10;
+    uint8_t mapLDR = map(currentValue > ldrMax ? ldrMax : currentValue, ldrMin, ldrMax, 1, slots);
+    uint8_t mapBright = map(mapLDR, 1, slots, minBright, maxBright);
+
+    if (abs(currentBrightSlot - mapLDR) >= 2 || mapBright == 0) {
+      dma_display->setBrightness8(mapBright);
+      currentBrightSlot = mapLDR;
     }
+    autoBrightMillis = millis();
   }
 }
 
@@ -188,7 +190,8 @@ void setup()
   p->E_pin = PANEL_E_PIN;
   p->timeZone = "Asia/Shanghai";
   p->displayBright = 14;
-  p->autoBrightMax = 0;
+  // Keep user's LDR auto-bright prefs (do not force autoBrightMax=0 every boot)
+  if (p->ldrPin == 0) p->ldrPin = 35;
   p->driver = 0;
   p->i2cSpeed = 10000000;
   p->save();
@@ -196,7 +199,8 @@ void setup()
   displaySetup(false, false, p->displayBright, p->displayRotation, p->driver, p->i2cSpeed, PANEL_E_PIN);
   clockface = new Clockface(dma_display);
 
-  autoBrightEnabled = false;
+  Serial.printf("[LDR] pin=GPIO%u enabled=%d min=%u max=%u\n",
+                p->ldrPin, (p->autoBrightMax > 0) ? 1 : 0, p->autoBrightMin, p->autoBrightMax);
 
   // 1) loading bar  2) birthday portrait  3) normal clockface
   // (skip WiFi icon screens so they don't interrupt the gift intro)

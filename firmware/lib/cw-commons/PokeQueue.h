@@ -25,8 +25,10 @@ enum PokeAction : uint8_t {
   POKE_LOCK = 18,      // msg: none | sleep,mins,intervalSec | shy,10,30
   POKE_DAYNIGHT = 19,  // msg: auto|day|night
   POKE_SECONDS = 20,   // msg: on|off|toggle
-  POKE_BYE = 21,       // character slowly slides off screen
+  POKE_BYE = 21,       // character slowly slides off; msg: left|right (default right)
   POKE_BACK = 22,      // character slides back
+  POKE_FAV = 23,       // msg: toggle|only|all|next
+  POKE_CALL = 24,      // knock / call her back from digital mode
 };
 
 struct PokeQueue {

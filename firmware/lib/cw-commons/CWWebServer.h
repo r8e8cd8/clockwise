@@ -175,9 +175,13 @@ struct ClockwiseWebServer
         } else if (a == "gdown") {
           PokeQueue::get().request(POKE_GAME_DOWN);
         } else if (a == "bye" || a == "leave" || a == "slide") {
-          PokeQueue::get().request(POKE_BYE);
+          PokeQueue::get().request(POKE_BYE, t.length() ? t.c_str() : "right");
         } else if (a == "back" || a == "come") {
           PokeQueue::get().request(POKE_BACK);
+        } else if (a == "call" || a == "knock" || a == "hey") {
+          PokeQueue::get().request(POKE_CALL);
+        } else if (a == "fav") {
+          PokeQueue::get().request(POKE_FAV, t.length() ? t.c_str() : "toggle");
         }
         client.println("HTTP/1.0 204 No Content");
         client.println();
@@ -210,6 +214,7 @@ struct ClockwiseWebServer
         ClockwiseParams::getInstance()->use24hFormat = (value == "1");
       } else if (key == ClockwiseParams::getInstance()->PREF_LDR_PIN) {
         ClockwiseParams::getInstance()->ldrPin = value.toInt();
+        pinMode(ClockwiseParams::getInstance()->ldrPin, INPUT);
       } else if (key == ClockwiseParams::getInstance()->PREF_TIME_ZONE) {
         ClockwiseParams::getInstance()->timeZone = value;
       } else if (key == ClockwiseParams::getInstance()->PREF_NTP_SERVER) {
