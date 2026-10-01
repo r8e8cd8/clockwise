@@ -54,10 +54,10 @@ button:active{transform:scale(.97);filter:brightness(.96)}
 .row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 input{width:100%;border:1px solid var(--line);border-radius:12px;background:#f7fafc;color:var(--ink);padding:12px 14px;font:inherit;margin:0 0 8px}
 input::placeholder{color:#9aabba}
-.cam-wrap{position:relative;border-radius:12px;overflow:hidden;background:#0f1419;aspect-ratio:4/3;margin-bottom:10px}
-.cam-wrap video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block}
-.cam-wrap.off video{display:none}
-.cam-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8a9aab;font-size:13px;padding:16px;text-align:center}
+.cam-wrap{position:relative;border-radius:12px;overflow:hidden;background:#0f1419;width:100%;aspect-ratio:4/3;min-height:200px;margin-bottom:10px}
+.cam-wrap video{width:100%;height:100%;min-height:200px;object-fit:cover;transform:scaleX(-1);display:block;background:#0f1419}
+.cam-wrap.off video{visibility:hidden;position:absolute;inset:0;pointer-events:none}
+.cam-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8a9aab;font-size:13px;padding:16px;text-align:center;z-index:1}
 .cam-wrap:not(.off) .cam-ph{display:none}
 .hint{font-size:12px;color:var(--muted);margin:8px 0 0;line-height:1.5}
 .hint b{color:var(--accent);font-weight:650}
@@ -114,6 +114,25 @@ input::placeholder{color:#9aabba}
       <button type="button" class="b-cool" onclick="fav('next')">下一张收藏</button>
       <button type="button" class="b-ok" onclick="fav('only')">只播收藏</button>
       <button type="button" class="b-mute" onclick="fav('all')">播放全部</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>帽子 / 装饰</h2>
+    <div class="grid">
+      <button type="button" class="b-ok" onclick="hat('next')">下一顶</button>
+      <button type="button" class="b-mute" onclick="hat('off')">脱掉</button>
+      <button type="button" class="b-cool" onclick="hat('1')">鸭舌帽</button>
+      <button type="button" class="b-cool" onclick="hat('2')">毛线帽</button>
+      <button type="button" class="b-soft" onclick="hat('3')">贝雷帽</button>
+      <button type="button" class="b-soft" onclick="hat('4')">渔夫帽</button>
+      <button type="button" class="b-love" onclick="hat('5')">猫耳</button>
+      <button type="button" class="b-warn" onclick="hat('6')">蝴蝶结</button>
+      <button type="button" class="b-accent span" onclick="hat('color')">换颜色</button>
+      <button type="button" class="b-mute" onclick="hat('blue')">蓝</button>
+      <button type="button" class="b-mute" onclick="hat('red')">红</button>
+      <button type="button" class="b-mute" onclick="hat('pink')">粉</button>
+      <button type="button" class="b-mute" onclick="hat('cream')">米</button>
     </div>
   </section>
 
@@ -211,6 +230,7 @@ async function send(a,t){
 function poke(a){send(a);}
 function bye(d){send('bye',d);}
 function fav(m){send('fav',m);}
+function hat(m){send('hat',m);}
 function say(t){send('say',t);}
 function dn(m){send('dn',m);}
 function sec(m){send('sec',m);}

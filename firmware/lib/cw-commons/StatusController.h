@@ -142,23 +142,24 @@ struct StatusController
 
 	void wifiConnecting()
 	{
-		Locator::getDisplay()->fillRect(0, 24, 64, 52, 0);
-		Locator::getDisplay()->drawBitmap(16, 24, CW_STATUS_WIFI, 32, 32, 0x2459);
-		printCenter("Connecting WiFi", 61);
+		Locator::getDisplay()->fillScreen(0);
+		Locator::getDisplay()->drawBitmap(16, 16, CW_STATUS_WIFI, 32, 32, 0x2459);
+		printCenter("Connecting WiFi", 56);
 	}
 
 	void wifiConnectionFailed(const char *msg)
 	{
-		Locator::getDisplay()->fillRect(0, 24, 64, 52, 0);
-		Locator::getDisplay()->drawBitmap(16, 24, CW_STATUS_WIFI, 32, 32, 0xFA28);
-		printCenter(msg, 61);
+		// Full clear — never leave birthday/boot art under the WiFi icon.
+		Locator::getDisplay()->fillScreen(0);
+		Locator::getDisplay()->drawBitmap(16, 16, CW_STATUS_WIFI, 32, 32, 0xFA28);
+		printCenter(msg, 56);
 	}
 
 	void ntpConnecting()
 	{
-		Locator::getDisplay()->fillRect(0, 24, 64, 52, 0);
-		Locator::getDisplay()->drawBitmap(16, 24, CW_STATUS_NTP, 32, 32, 0xBCBF);
-		printCenter("NTP Server", 61);
+		Locator::getDisplay()->fillScreen(0);
+		Locator::getDisplay()->drawBitmap(16, 16, CW_STATUS_NTP, 32, 32, 0xBCBF);
+		printCenter("NTP Server", 56);
 	}
 
 	void printCenter(const char *buf, int y)

@@ -6,6 +6,7 @@
 #include <IClockface.h>
 #include <CWDateTime.h>
 #include "assets.h"
+#include "hats_assets.h"
 
 #define CLOCKFACE_NAME "cw-cf-godwise"
 
@@ -68,6 +69,8 @@ class Clockface : public IClockface {
   static const uint8_t FAV_BYTES = 8;  // up to 64 scenes
   uint8_t _favBits[FAV_BYTES];
   bool _favOnly;
+  uint8_t _hatIdx;  // 0=none, 1..HAT_COUNT
+  uint8_t _hatColor;  // 0..HAT_COLORS-1 for colorable styles
 
   // games
   uint8_t _gameMode;
@@ -108,9 +111,11 @@ class Clockface : public IClockface {
   void drawPortraitRegion(int x, int y, int w, int h);
   void drawPortraitRegion(int x, int y, int w, int h, bool skipDial);
   void drawFullFrame();
+  void paintDialBackdrop();  // rim around dial only (scene+char); face via fillCircle
   void drawTimeAnalog(bool clearBg = true);
   void drawDialMorph();
-  void drawDigitalClock();
+  void drawDigitalClock(bool paintBg = true);
+  void refreshDigitalOverlay();
   void drawHourglass(int x, int y, int sec);
   void drawDigitScaled(int x, int y, uint8_t digit, uint8_t scale, uint16_t color);
   void drawPatch(int eyeCx, int eyeCy, const uint16_t* patch);
@@ -159,6 +164,12 @@ class Clockface : public IClockface {
   void setFavorite(uint8_t idx, bool on);
   void toggleFavoriteCurrent();
   void setFavOnly(bool on);
+  void setHat(uint8_t idx);       // 0=off, 1..HAT_COUNT
+  void setHatStyle(uint8_t style); // 1..4 colorable, 5=catear, 6=bow
+  void setHatColor(uint8_t color); // 0..HAT_COLORS-1
+  void nextHatColor();
+  void nextHat();
+  uint8_t hatIndex() const { return _hatIdx; }
   uint8_t countFavoritesInPool(uint8_t base, uint8_t count) const;
   bool nextFavoriteInPool(uint8_t base, uint8_t count, uint8_t& outPoolIdx) const;
   void drawCallOverlay();

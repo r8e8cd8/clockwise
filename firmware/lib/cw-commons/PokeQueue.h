@@ -31,6 +31,7 @@ enum PokeAction : uint8_t {
   POKE_CALL = 24,      // knock / call her back from digital mode
   POKE_BG = 25,        // msg: scene index 0..SCENE_COUNT-1
   POKE_MOTTO = 26,     // show Chinese motto on screen
+  POKE_HAT = 27,       // msg: next|off|0..HAT_COUNT
 };
 
 struct PokeQueue {

@@ -610,7 +610,7 @@ public class MainActivity extends AppCompatActivity {
             final Bitmap frame = show;
             runOnUiThread(() -> {
                 if (ledView != null && frame != null) ledView.setImageBitmap(frame);
-                if (!isFinishing()) mainHandler.postDelayed(this::refreshLed, 5000);
+                if (!isFinishing()) mainHandler.postDelayed(this::refreshLed, 20000);
             });
         });
     }

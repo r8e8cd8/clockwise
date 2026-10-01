@@ -18,6 +18,15 @@ struct ClockwiseWebServer
 {
   String httpBuffer;
   bool force_restart;
+  bool wifiArm = false;
+  bool wifiConnecting = false;
+  bool wifiConnectOk = false;
+  int wifiChannel = 0;
+  unsigned long wifiConnectStarted = 0;
+  unsigned long wifiRestartAt = 0;
+  String wifiConnectSsid;
+  String wifiConnectPwd;
+  String wifiLastErr;
   const char* HEADER_TEMPLATE_D = "X-%s: %d\r\n";
   const char* HEADER_TEMPLATE_S = "X-%s: %s\r\n";
  
@@ -74,6 +83,7 @@ struct ClockwiseWebServer
 
   void handleHttpRequest()
   {
+    pollWifiConnect();
     if (force_restart)
       StatusController::getInstance()->forceRestart();
 
@@ -91,8 +101,13 @@ struct ClockwiseWebServer
 
           if (c == '\n')
           {
-            uint8_t method_pos = httpBuffer.indexOf(' ');
-            uint8_t path_pos = httpBuffer.indexOf(' ', method_pos + 1);
+            // Must be int — Chinese SSIDs make the request line longer than 255 bytes.
+            int method_pos = httpBuffer.indexOf(' ');
+            int path_pos = httpBuffer.indexOf(' ', method_pos + 1);
+            if (method_pos < 0 || path_pos < 0) {
+              httpBuffer = "";
+              break;
+            }
 
             String method = httpBuffer.substring(0, method_pos);
             String path = httpBuffer.substring(method_pos + 1, path_pos);
@@ -121,11 +136,73 @@ struct ClockwiseWebServer
 
   void processRequest(WiFiClient client, String method, String path, String key, String value, String query = "")
   {
-    if (method == "GET" && path == "/") {
+    wifi_mode_t mode = WiFi.getMode();
+    bool apOn = (mode == WIFI_AP || mode == WIFI_AP_STA) && WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
+
+    // Captive-portal probes (Windows opens /redirect after connecttest).
+    bool captiveProbe =
+        path == "/" || path == "/generate_204" || path == "/gen_204" ||
+        path == "/hotspot-detect.html" || path == "/library/test/success.html" ||
+        path == "/connecttest.txt" || path == "/ncsi.txt" || path == "/fwlink" ||
+        path == "/redirect" || path == "/success.txt" || path == "/canonical.html" ||
+        path.startsWith("/redirect");
+
+    if (method == "GET" && captiveProbe) {
       client.println("HTTP/1.0 200 OK");
-      client.println("Content-Type: text/html");
+      client.println("Content-Type: text/html; charset=utf-8");
+      client.println("Connection: close");
+      client.println("Cache-Control: no-cache");
       client.println();
-      client.println(SETTINGS_PAGE);
+      if (!apOn) {
+        client.println(SETTINGS_PAGE);
+      } else {
+      // Simple portal: manual SSID first (scan is optional — scanning used to freeze the page).
+      client.println(F(
+        "<!DOCTYPE html><html><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>Clockwise WiFi</title>"
+        "<style>"
+        "body{font-family:sans-serif;padding:16px;background:#e8f0f4;color:#1a2430}"
+        "input,button{width:100%;padding:12px;margin:8px 0;font-size:16px;box-sizing:border-box;border-radius:10px;border:1px solid #c5d4e0}"
+        "button{background:#2c5f9e;color:#fff;border:0}"
+        "button.sec{background:#dce9f7;color:#2c5f9e}"
+        "#s{color:#2a7d8c}#list button{background:#fff;color:#1a2430;text-align:left}"
+        "</style></head><body>"
+        "<h2>Clockwise 配网</h2>"
+        "<p id=s>直接填写家里的 <b>2.4G</b> WiFi（不要用 5G）</p>"
+        "<input id=ssid placeholder='WiFi 名称 SSID'>"
+        "<input id=pwd type=password placeholder='WiFi 密码，开放网络留空'>"
+        "<button onclick='go()'>连接</button>"
+        "<button class=sec onclick='load()'>搜索附近网络</button>"
+        "<div id=list></div>"
+        "<p style='font-size:13px;color:#5a6b7a'>本页地址：192.168.4.1</p>"
+        "<script>"
+        "async function go(){"
+        "const ssid=document.getElementById('ssid').value.trim();"
+        "if(!ssid){alert('先填 WiFi 名称');return;}"
+        "document.getElementById('s').textContent='正在连接…';"
+        "const u='/wifi?ssid='+encodeURIComponent(ssid)+'&pwd='+encodeURIComponent(document.getElementById('pwd').value);"
+        "try{const t=await(await fetch(u)).text();"
+        "document.getElementById('s').textContent=t.indexOf('ok=')>=0?'已提交，请把手机切回家里 WiFi 等 20 秒':t;"
+        "}catch(e){document.getElementById('s').textContent='已提交，请切回家里 WiFi';}"
+        "}"
+        "async function load(){"
+        "document.getElementById('s').textContent='搜索中，约 5 秒…';"
+        "try{"
+        "const t=await(await fetch('/wifi/scan')).text();"
+        "const L=document.getElementById('list');L.innerHTML='';"
+        "t.split('\\n').forEach(line=>{"
+        "if(!line.startsWith('net='))return;const p=line.slice(4).split('|');const n=p[0];if(!n)return;"
+        "const b=document.createElement('button');b.className='sec';"
+        "b.textContent=n+'  '+(p[2]==='0'?'开放':'需密码');"
+        "b.onclick=()=>{document.getElementById('ssid').value=n};"
+        "L.appendChild(b);});"
+        "document.getElementById('s').textContent=L.children.length?'点选网络，或继续手填':'没搜到，请手填名称';"
+        "}catch(e){document.getElementById('s').textContent='搜索失败，请手填 WiFi 名称';}"
+        "}"
+        "</script></body></html>"
+      ));
+      }
     } else if (method == "GET" && path == "/poke") {
       String a = query.length() ? queryGet(query, "a") : "";
       if (a.length() == 0) {
@@ -187,6 +264,8 @@ struct ClockwiseWebServer
           PokeQueue::get().request(POKE_BG, t.length() ? t.c_str() : "0");
         } else if (a == "motto" || (a == "say" && t == "motto")) {
           PokeQueue::get().request(POKE_MOTTO);
+        } else if (a == "hat" || a == "deco") {
+          PokeQueue::get().request(POKE_HAT, t.length() ? t.c_str() : "next");
         }
         client.println("HTTP/1.0 204 No Content");
         client.println();
@@ -205,6 +284,10 @@ struct ClockwiseWebServer
       SceneBridge::writeBmp(client, (uint8_t)idx);
     } else if (method == "GET" && path == "/screen") {
       SceneBridge::writeScreen(client);
+    } else if (method == "GET" && path == "/wifi/scan") {
+      writeWifiScan(client);
+    } else if (method == "GET" && path == "/wifi") {
+      handleWifi(client, query);
     } else if (method == "GET" && path == "/get") {
       getCurrentSettings(client);
     } else if (method == "GET" && path == "/read") {
@@ -255,6 +338,258 @@ struct ClockwiseWebServer
       }
       ClockwiseParams::getInstance()->save();
       client.println("HTTP/1.0 204 No Content");
+    } else if (method == "GET" && apOn) {
+      // Any other GET while setup AP is up → send captive portal page
+      // (covers Windows msftconnecttest /redirect and similar).
+      client.println("HTTP/1.0 200 OK");
+      client.println("Content-Type: text/html; charset=utf-8");
+      client.println("Connection: close");
+      client.println("Cache-Control: no-cache");
+      client.println();
+      client.println(F("<!DOCTYPE html><html><head><meta charset=utf-8>"
+                       "<meta http-equiv='refresh' content='0;url=/'>"
+                       "<title>Clockwise</title></head><body>"
+                       "<p><a href='/'>打开配网页面</a></p>"
+                       "<p>或手动输入 <b>192.168.4.1</b></p>"
+                       "</body></html>"));
+    }
+  }
+
+  static String wifiEscape(const String &s) {
+    String out;
+    out.reserve(s.length());
+    for (unsigned i = 0; i < s.length(); i++) {
+      char c = s[i];
+      if (c == '\\' || c == '|' || c == '\n' || c == '\r') continue;
+      out += c;
+    }
+    return out;
+  }
+
+  void writeWifiScan(WiFiClient client) {
+    WiFi.mode(WIFI_AP_STA);
+    if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0)) {
+      WiFi.softAP("Clockwise-Wifi", "12345678", 6, false, 4);
+      delay(50);
+    }
+    int n = WiFi.scanNetworks(false, false);
+    client.println("HTTP/1.0 200 OK");
+    client.println("Content-Type: text/plain; charset=utf-8");
+    client.println("Connection: close");
+    client.println();
+    if (n < 0) {
+      client.println("n=0");
+      client.println("err=scan");
+      return;
+    }
+    // Deduplicate by SSID, keep strongest.
+    struct Hit { String ssid; int32_t rssi; bool secure; int channel; };
+    Hit hits[24];
+    int hitCount = 0;
+    for (int i = 0; i < n && hitCount < 24; i++) {
+      String ssid = WiFi.SSID(i);
+      if (ssid.length() == 0) continue;
+      if (ssid == "Clockwise-Wifi") continue;
+      int32_t rssi = WiFi.RSSI(i);
+      bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+      int channel = WiFi.channel(i);
+      int found = -1;
+      for (int j = 0; j < hitCount; j++) {
+        if (hits[j].ssid == ssid) { found = j; break; }
+      }
+      if (found >= 0) {
+        if (rssi > hits[found].rssi) {
+          hits[found].rssi = rssi;
+          hits[found].secure = secure;
+          hits[found].channel = channel;
+        }
+      } else {
+        hits[hitCount].ssid = ssid;
+        hits[hitCount].rssi = rssi;
+        hits[hitCount].secure = secure;
+        hits[hitCount].channel = channel;
+        hitCount++;
+      }
+    }
+    WiFi.scanDelete();
+    // Strongest first.
+    for (int i = 0; i < hitCount; i++) {
+      for (int j = i + 1; j < hitCount; j++) {
+        if (hits[j].rssi > hits[i].rssi) {
+          Hit tmp = hits[i];
+          hits[i] = hits[j];
+          hits[j] = tmp;
+        }
+      }
+    }
+    client.printf("n=%d\n", hitCount);
+    for (int i = 0; i < hitCount; i++) {
+      client.print("net=");
+      client.print(wifiEscape(hits[i].ssid));
+      client.print('|');
+      client.print(hits[i].rssi);
+      client.print('|');
+      client.print(hits[i].secure ? 1 : 0);
+      client.print('|');
+      client.println(hits[i].channel);
+    }
+  }
+
+  void beginStaJoin() {
+    // Drop the setup hotspot. Sharing the radio with it stops the clock joining a router.
+    WiFi.setSleep(false);
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    WiFi.disconnect(false, true);
+    delay(100);
+    if (wifiChannel >= 1 && wifiChannel <= 13) {
+      WiFi.begin(wifiConnectSsid.c_str(), wifiConnectPwd.c_str(), wifiChannel);
+    } else {
+      WiFi.begin(wifiConnectSsid.c_str(), wifiConnectPwd.c_str());
+    }
+    wifiConnectStarted = millis();
+    Serial.printf("[WiFi] Joining %s channel %d\n", wifiConnectSsid.c_str(), wifiChannel);
+  }
+
+  void restoreSetupAp() {
+    WiFi.disconnect(false, false);
+    delay(50);
+    WiFi.mode(WIFI_AP_STA);
+    IPAddress apIP(192, 168, 4, 1);
+    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+    bool ok = WiFi.softAP("Clockwise-Wifi", "12345678", 6, false, 4);
+    delay(200);
+    Serial.printf("[WiFi] Setup AP back %s\n", ok ? "OK" : "FAIL");
+  }
+
+  void pollWifiConnect() {
+    if (wifiRestartAt != 0 && millis() >= wifiRestartAt) {
+      wifiRestartAt = 0;
+      force_restart = true;
+      return;
+    }
+    if (wifiArm) {
+      wifiArm = false;
+      wifiConnecting = true;
+      wifiConnectOk = false;
+      wifiLastErr = "";
+      beginStaJoin();
+      return;
+    }
+    if (!wifiConnecting) return;
+
+    wl_status_t st = WiFi.status();
+    if (st == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
+      ClockwiseParams *prefs = ClockwiseParams::getInstance();
+      prefs->load();
+      prefs->wifiSsid = wifiConnectSsid;
+      prefs->wifiPwd = wifiConnectPwd;
+      prefs->save();
+      wifiConnecting = false;
+      wifiConnectOk = true;
+      wifiLastErr = "";
+      wifiRestartAt = millis() + 20000;
+      Serial.printf("[WiFi] Verified %s ip=%s\n",
+                    wifiConnectSsid.c_str(),
+                    WiFi.localIP().toString().c_str());
+      return;
+    }
+    // ESP32 reports CONNECT_FAILED while it is still trying. Wait the full window.
+    if ((millis() - wifiConnectStarted) > 25000) {
+      wifiLastErr = (st == WL_NO_SSID_AVAIL) ? "not_found" : "timeout";
+      wifiConnecting = false;
+      wifiConnectOk = false;
+      Serial.printf("[WiFi] Connect failed err=%s status=%d\n", wifiLastErr.c_str(), (int)st);
+      restoreSetupAp();
+    }
+  }
+
+  void handleWifi(WiFiClient client, const String &query) {
+    ClockwiseParams *prefs = ClockwiseParams::getInstance();
+    prefs->load();
+    String ssid = queryGet(query, "ssid");
+    String forget = queryGet(query, "forget");
+
+    if (forget == "1") {
+      prefs->wifiSsid = "";
+      prefs->wifiPwd = "";
+      prefs->save();
+      wifiConnecting = false;
+      wifiConnectOk = false;
+      wifiLastErr = "";
+      wifiArm = false;
+      WiFi.disconnect(true, true);
+      client.println("HTTP/1.0 200 OK");
+      client.println("Content-Type: text/plain");
+      client.println("Connection: close");
+      client.println();
+      client.println("ok=1");
+      client.println("action=forget");
+      client.flush();
+      force_restart = true;
+      return;
+    }
+
+    if (ssid.length() > 0) {
+      if (ssid.length() > 32) {
+        client.println("HTTP/1.0 400 Bad Request");
+        client.println("Content-Type: text/plain");
+        client.println("Connection: close");
+        client.println();
+        client.println("ok=0");
+        client.println("err=ssid_long");
+        return;
+      }
+      String pwd = queryGet(query, "pwd");
+      if (pwd.length() > 63) pwd = pwd.substring(0, 63);
+      int channel = queryGet(query, "ch").toInt();
+
+      // Answer first. The radio switch happens on the next loop, after this reply is sent.
+      wifiConnectSsid = ssid;
+      wifiConnectPwd = pwd;
+      wifiChannel = channel;
+      wifiArm = true;
+      wifiConnecting = false;
+      wifiConnectOk = false;
+      wifiLastErr = "";
+      wifiRestartAt = 0;
+
+      client.println("HTTP/1.0 200 OK");
+      client.println("Content-Type: text/plain; charset=utf-8");
+      client.println("Connection: close");
+      client.println();
+      client.println("ok=pending");
+      client.print("ssid=");
+      client.println(wifiEscape(ssid));
+      client.flush();
+      return;
+    }
+
+    client.println("HTTP/1.0 200 OK");
+    client.println("Content-Type: text/plain; charset=utf-8");
+    client.println("Connection: close");
+    client.println();
+    client.print("ssid=");
+    client.println(wifiEscape(wifiConnecting ? wifiConnectSsid : prefs->wifiSsid));
+    client.print("sta=");
+    client.println(WiFi.status() == WL_CONNECTED ? "1" : "0");
+    client.print("connecting=");
+    client.println(wifiConnecting ? "1" : "0");
+    if (wifiConnectOk || WiFi.status() == WL_CONNECTED) {
+      client.println("ok=1");
+      client.print("ip=");
+      client.println(WiFi.localIP().toString());
+    } else if (wifiLastErr.length() > 0 && !wifiConnecting) {
+      client.println("ok=0");
+      client.print("err=");
+      client.println(wifiLastErr);
+    } else if (wifiConnecting) {
+      client.println("ok=pending");
+    } else {
+      client.println("ok=0");
     }
   }
 

@@ -69,7 +69,7 @@ void playCakeWithLoadingBar(Adafruit_GFX *d, unsigned long ms)
 void playBirthdayPortrait(Adafruit_GFX *d)
 {
   if (!d || BIRTHDAY_BOOT_COUNT == 0) return;
-  d->fillScreen(0x0000);  // wipe cake text + loading bar
+  // drawBootFrame paints all 64×64 — no fillScreen (avoids black flash)
   drawBootFrame(d, 0);
   delay(BIRTHDAY_BOOT_MS);
 }
@@ -206,8 +206,8 @@ void setup()
   Serial.printf("[LDR] pin=GPIO%u enabled=%d min=%u max=%u\n",
                 p->ldrPin, (p->autoBrightMax > 0) ? 1 : 0, p->autoBrightMin, p->autoBrightMax);
 
-  // 1) loading bar  2) birthday portrait  3) normal clockface
-  // (skip WiFi icon screens so they don't interrupt the gift intro)
+  // 1) cake+loading  2) birthday portrait (keep on screen through WiFi/NTP)
+  // 3) WiFi + NTP while birthday still visible  4) clockface draws over — no black gap
   playBirthdayBoot(dma_display);
 
   if (wifi.begin())
@@ -218,18 +218,20 @@ void setup()
                      p->manualPosix.c_str());
     Serial.printf("[POKE] Phone UI: http://%s/poke\n", WiFi.localIP().toString().c_str());
   }
+  // Draw normal face directly over birthday — do not fillScreen(0) first.
   clockface->setup(&cwDateTime);
 }
 
 void loop()
 {
   wifi.handleImprovWiFi();
+  wifi.processDns();
+
+  if (wifi.servesHttp())
+    ClockwiseWebServer::getInstance()->handleHttpRequest();
 
   if (wifi.isConnected())
-  {
-    ClockwiseWebServer::getInstance()->handleHttpRequest();
     ezt::events();
-  }
 
   if (wifi.connectionSucessfulOnce)
   {

@@ -126,6 +126,8 @@ Clockface::Clockface(Adafruit_GFX* display) {
   _callUntilMs = 0;
   memset(_favBits, 0, sizeof(_favBits));
   _favOnly = false;
+  _hatIdx = 0;
+  _hatColor = 0;
   _gameTickMs = 0;
   _gameMode = GM_OFF;
   _gameOver = false;
@@ -236,10 +238,12 @@ void Clockface::drawFullFrame() {
     return;
   }
 
-  drawPortraitRegion(0, 0, 64, 64, false);
+  // Skip only the dial face circle (not the whole corner box) so scene/hair
+  // around the rim still updates; then refresh dial with current scene under it.
+  drawPortraitRegion(0, 0, 64, 64, true);
   applyBlinkFrame(_blinkFrame);
   drawBlush(_blushLevel);
-  drawTimeAnalog(false);
+  drawTimeAnalog(true);
   if (_mottoOn) drawMotto();
   else if (_bubbleOn) drawBubble();
 }
@@ -247,7 +251,7 @@ void Clockface::drawFullFrame() {
 void Clockface::setup(CWDateTime* dateTime) {
   _dateTime = dateTime;
   loadFavorites();
-  Locator::getDisplay()->fillScreen(BG_COLOR);
+  // No fillScreen — paint full frame over birthday/boot art to avoid black gap.
   _poolIdx = 0;
   _wasDay = isDayHour(_dateTime->getHour());
   _sceneIdx = _wasDay ? 0 : DAY_SCENE_COUNT;
@@ -392,6 +396,57 @@ void Clockface::setFavOnly(bool on) {
   if (_slideMode == 0) drawBubble();
 }
 
+void Clockface::setHat(uint8_t idx) {
+  if (idx > HAT_COUNT) idx = 0;
+  _hatIdx = idx;
+  if (_hatIdx >= 1 && _hatIdx <= (uint8_t)(HAT_COLORABLE_STYLES * HAT_COLORS)) {
+    _hatColor = (uint8_t)((_hatIdx - 1) % HAT_COLORS);
+  }
+  drawFullFrame();
+}
+
+void Clockface::setHatStyle(uint8_t style) {
+  // 1..4 colorable, 5=catear, 6=bow
+  if (style >= 1 && style <= HAT_COLORABLE_STYLES) {
+    if (_hatColor >= HAT_COLORS) _hatColor = 0;
+    _hatIdx = (uint8_t)((style - 1) * HAT_COLORS + _hatColor + 1);
+  } else if (style == 5) {
+    _hatIdx = (uint8_t)(HAT_COLORABLE_STYLES * HAT_COLORS + 1);
+  } else if (style == 6) {
+    _hatIdx = (uint8_t)(HAT_COLORABLE_STYLES * HAT_COLORS + 2);
+  } else {
+    _hatIdx = 0;
+  }
+  drawFullFrame();
+}
+
+void Clockface::setHatColor(uint8_t color) {
+  if (color >= HAT_COLORS) color = 0;
+  _hatColor = color;
+  if (_hatIdx >= 1 && _hatIdx <= (uint8_t)(HAT_COLORABLE_STYLES * HAT_COLORS)) {
+    uint8_t style = (uint8_t)((_hatIdx - 1) / HAT_COLORS);
+    _hatIdx = (uint8_t)(style * HAT_COLORS + _hatColor + 1);
+    drawFullFrame();
+  }
+}
+
+void Clockface::nextHatColor() {
+  if (_hatIdx == 0) return;
+  if (_hatIdx > (uint8_t)(HAT_COLORABLE_STYLES * HAT_COLORS)) return;
+  _hatColor = (uint8_t)((_hatColor + 1) % HAT_COLORS);
+  uint8_t style = (uint8_t)((_hatIdx - 1) / HAT_COLORS);
+  _hatIdx = (uint8_t)(style * HAT_COLORS + _hatColor + 1);
+  drawFullFrame();
+}
+
+void Clockface::nextHat() {
+  _hatIdx = (uint8_t)((_hatIdx + 1) % (HAT_COUNT + 1));
+  if (_hatIdx >= 1 && _hatIdx <= (uint8_t)(HAT_COLORABLE_STYLES * HAT_COLORS)) {
+    _hatColor = (uint8_t)((_hatIdx - 1) % HAT_COLORS);
+  }
+  drawFullFrame();
+}
+
 uint8_t Clockface::countFavoritesInPool(uint8_t base, uint8_t count) const {
   uint8_t n = 0;
   for (uint8_t i = 0; i < count; i++) {
@@ -443,8 +498,8 @@ void Clockface::startSlideLeave(int8_t dir) {
     _effect = 0;
   }
   _blinkFrame = -1;
-  drawPortraitRegion(0, 0, 64, 64, false);
-  drawTimeAnalog(false);
+  drawPortraitRegion(0, 0, 64, 64, true);
+  drawTimeAnalog(true);
   _charOx = 0;
   _charOy = 0;
   _slideMode = 1;
@@ -468,8 +523,8 @@ void Clockface::startSlideBack() {
   _dialAnimR = DIAL_R;
   _dialAnimRot = 0;
   _slideTickMs = millis();
-  drawPortraitRegion(0, 0, 64, 64, false);
-  drawTimeAnalog(false);
+  drawPortraitRegion(0, 0, 64, 64, true);
+  drawTimeAnalog(true);
 }
 
 void Clockface::startCall() {
@@ -721,9 +776,44 @@ void Clockface::handlePoke(unsigned long now) {
     }
     return;
   }
+  if (a == POKE_HAT) {
+    if (!strcmp(msg, "next") || msg[0] == 0) {
+      nextHat();
+    } else if (!strcmp(msg, "off") || !strcmp(msg, "none") || !strcmp(msg, "0")) {
+      setHat(0);
+    } else if (!strcmp(msg, "color") || !strcmp(msg, "c") || !strcmp(msg, "recolor")) {
+      nextHatColor();
+    } else if (!strcmp(msg, "blue") || !strcmp(msg, "c0")) {
+      setHatColor(0);
+    } else if (!strcmp(msg, "red") || !strcmp(msg, "c1")) {
+      setHatColor(1);
+    } else if (!strcmp(msg, "pink") || !strcmp(msg, "c2")) {
+      setHatColor(2);
+    } else if (!strcmp(msg, "cream") || !strcmp(msg, "c3")) {
+      setHatColor(3);
+    } else if (!strcmp(msg, "cap") || !strcmp(msg, "1")) {
+      setHatStyle(1);
+    } else if (!strcmp(msg, "beanie") || !strcmp(msg, "2")) {
+      setHatStyle(2);
+    } else if (!strcmp(msg, "beret") || !strcmp(msg, "3")) {
+      setHatStyle(3);
+    } else if (!strcmp(msg, "bucket") || !strcmp(msg, "4")) {
+      setHatStyle(4);
+    } else if (!strcmp(msg, "catear") || !strcmp(msg, "5") || !strcmp(msg, "cat")) {
+      setHatStyle(5);
+    } else if (!strcmp(msg, "bow") || !strcmp(msg, "6")) {
+      setHatStyle(6);
+    } else {
+      int n = atoi(msg);
+      if (n < 0) n = 0;
+      if (n > HAT_COUNT) n = HAT_COUNT;
+      setHat((uint8_t)n);
+    }
+    return;
+  }
 
   // During schedule window still allow next / say / lock / day / sec / slide
-  if (_moodLock && a != POKE_NEXT && a != POKE_SAY && a != POKE_BG && a != POKE_MOTTO) {
+  if (_moodLock && a != POKE_NEXT && a != POKE_SAY && a != POKE_BG && a != POKE_MOTTO && a != POKE_HAT) {
     return;
   }
 
@@ -829,31 +919,23 @@ void Clockface::tickAnimation(unsigned long now) {
 
   if (_slideMode == 3 || _slideMode == 5) {
     bool minuteChanged = (h != _lastHour || m != _lastMinute);
-    bool timeChanged = minuteChanged || (s != _lastSecond);
-    if (timeChanged || (now - _slideTickMs >= 1200)) {
-      if (_slideMode == 3 && now - _slideTickMs >= 1200) {
-        _digitalColon = !_digitalColon;
-        _slideTickMs = now;
-      }
-      if (minuteChanged && _lastMinute >= 0 && _slideMode == 3) {
-        bool day = isDayHour(h);
-        uint8_t count = day ? DAY_SCENE_COUNT : NIGHT_SCENE_COUNT;
-        uint8_t base = day ? 0 : DAY_SCENE_COUNT;
-        if (count > 0) {
-          uint8_t nextPool = 0;
-          if (_favOnly && nextFavoriteInPool(base, count, nextPool)) {
-            _poolIdx = nextPool;
-          } else {
-            _poolIdx = (_poolIdx + 1) % count;
-          }
-          _sceneIdx = base + _poolIdx;
-          _wasDay = day;
-        }
-      }
+    bool secondChanged = (s != _lastSecond);
+    bool colonBlink = (_slideMode == 3 && now - _slideTickMs >= 1200);
+    if (colonBlink) {
+      _digitalColon = !_digitalColon;
+      _slideTickMs = now;
+    }
+    if (minuteChanged || secondChanged || colonBlink) {
       _lastHour = h;
       _lastMinute = m;
       _lastSecond = s;
-      drawFullFrame();
+      // Full background only on minute change / call overlay.
+      // Second + colon updates only touch digits/hourglass (stops LED flash).
+      if (_slideMode == 5 || minuteChanged) {
+        drawFullFrame();
+      } else {
+        refreshDigitalOverlay();
+      }
     }
     return;
   }
@@ -864,10 +946,13 @@ void Clockface::tickAnimation(unsigned long now) {
   bool timeChanged = (h != _lastHour || m != _lastMinute ||
                       (_showSeconds && s != _lastSecond));
   if (timeChanged) {
+    bool minuteOrHour = (h != _lastHour || m != _lastMinute);
     _lastHour = h;
     _lastMinute = m;
     _lastSecond = s;
-    drawTimeAnalog(true);
+    // Seconds-only: redraw dial face/hands, do NOT wipe backdrop (less flicker).
+    // Minute/hour: refresh scene backdrop under dial then dial.
+    drawTimeAnalog(minuteOrHour);
     if (_bubbleOn) drawBubble();
   }
 
@@ -935,34 +1020,37 @@ void Clockface::clearBubbleArea() {
 }
 
 void Clockface::clearEffectArt() {
-  // Full mid-face wipe so hearts / sparks leave no trails
-  drawPortraitRegion(0, 8, 64, 44);
+  // Full mid-face wipe so hearts / sparks leave no trails — never touch analog dial.
+  drawPortraitRegion(0, 8, 64, 44, true);
   for (uint8_t i = 0; i < FX_N; i++) {
     _fx[i] = -1;
     _fy[i] = -1;
   }
   drawBlush(_blushLevel);
-  drawTimeAnalog();
   if (_bubbleOn) drawBubble();
 }
 
 void Clockface::drawPortraitRegion(int x, int y, int w, int h) {
-  drawPortraitRegion(x, y, w, h, false);
+  // Analog dial corner: always skip while portrait UI is up (char/hat overlap dial box).
+  bool protectDial = (_slideMode != 2 && _slideMode != 3);
+  drawPortraitRegion(x, y, w, h, protectDial);
 }
 
 void Clockface::drawPortraitRegion(int x, int y, int w, int h, bool skipDial) {
   Adafruit_GFX* d = Locator::getDisplay();
   uint8_t s = _sceneIdx;
   if (s >= SCENE_COUNT) s = 0;
-  const int dx0 = DIAL_CX - DIAL_CLEAR;
-  const int dy0 = DIAL_CY - DIAL_CLEAR;
-  const int dx1 = dx0 + DIAL_CLEAR * 2;
-  const int dy1 = dy0 + DIAL_CLEAR * 2;
+  // Only protect the round dial face — rim/corners must still get scene updates.
+  const int r2 = DIAL_R * DIAL_R;
   for (int yy = y; yy < y + h; yy++) {
     if (yy < 0 || yy >= 64) continue;
     for (int xx = x; xx < x + w; xx++) {
       if (xx < 0 || xx >= 64) continue;
-      if (skipDial && xx >= dx0 && xx <= dx1 && yy >= dy0 && yy <= dy1) continue;
+      if (skipDial) {
+        int ddx = xx - DIAL_CX;
+        int ddy = yy - DIAL_CY;
+        if (ddx * ddx + ddy * ddy <= r2) continue;
+      }
       uint16_t color = pgm_read_word(&PORTRAIT_SCENES[s][yy * 64 + xx]);
 #if defined(HAS_CHAR_LAYER) && HAS_CHAR_LAYER
       int cx = xx - _charOx;
@@ -972,6 +1060,13 @@ void Clockface::drawPortraitRegion(int x, int y, int w, int h, bool skipDial) {
         uint8_t mb = pgm_read_byte(&CHAR_MASK[idx >> 3]);
         if (mb & (1 << (idx & 7))) {
           color = pgm_read_word(&CHAR_RGB[idx]);
+        }
+        if (_hatIdx > 0 && _hatIdx <= HAT_COUNT) {
+          uint8_t hi = (uint8_t)(_hatIdx - 1);
+          uint8_t hm = pgm_read_byte(&HAT_MASK[hi][idx >> 3]);
+          if (hm & (1 << (idx & 7))) {
+            color = pgm_read_word(&HAT_RGB[hi][idx]);
+          }
         }
       }
 #endif
@@ -1029,17 +1124,61 @@ static void drawHand(Adafruit_GFX* d, int cx, int cy, float deg, int len, uint16
   d->drawLine(cx, cy, x2, y2, color);
 }
 
+void Clockface::paintDialBackdrop() {
+  // Refresh only the rim around the dial (outside the face circle) with
+  // full scene+char+hat. Interior is covered by fillCircle — painting scene
+  // there first caused a visible flash and froze wrong when skipped.
+  Adafruit_GFX* d = Locator::getDisplay();
+  uint8_t s = _sceneIdx;
+  if (s >= SCENE_COUNT) s = 0;
+  const int dx0 = DIAL_CX - DIAL_CLEAR;
+  const int dy0 = DIAL_CY - DIAL_CLEAR;
+  const int dx1 = dx0 + DIAL_CLEAR * 2;
+  const int dy1 = dy0 + DIAL_CLEAR * 2;
+  const int r2 = DIAL_R * DIAL_R;
+  for (int yy = dy0; yy <= dy1; yy++) {
+    if (yy < 0 || yy >= 64) continue;
+    for (int xx = dx0; xx <= dx1; xx++) {
+      if (xx < 0 || xx >= 64) continue;
+      int ddx = xx - DIAL_CX;
+      int ddy = yy - DIAL_CY;
+      if (ddx * ddx + ddy * ddy <= r2) continue;  // leave face to fillCircle
+      uint16_t color = pgm_read_word(&PORTRAIT_SCENES[s][yy * 64 + xx]);
+#if defined(HAS_CHAR_LAYER) && HAS_CHAR_LAYER
+      int cx = xx - _charOx;
+      int cy = yy - _charOy;
+      if (cx >= 0 && cx < 64 && cy >= 0 && cy < 64) {
+        uint16_t idx = (uint16_t)cy * 64 + (uint16_t)cx;
+        uint8_t mb = pgm_read_byte(&CHAR_MASK[idx >> 3]);
+        if (mb & (1 << (idx & 7))) {
+          color = pgm_read_word(&CHAR_RGB[idx]);
+        }
+        if (_hatIdx > 0 && _hatIdx <= HAT_COUNT) {
+          uint8_t hi = (uint8_t)(_hatIdx - 1);
+          uint8_t hm = pgm_read_byte(&HAT_MASK[hi][idx >> 3]);
+          if (hm & (1 << (idx & 7))) {
+            color = pgm_read_word(&HAT_RGB[hi][idx]);
+          }
+        }
+      }
+#endif
+      d->drawPixel(xx, yy, color);
+    }
+  }
+}
+
 void Clockface::drawTimeAnalog(bool clearBg) {
   if (!_dateTime) return;
   if (_slideMode == 2 || _slideMode == 3) return;
   Adafruit_GFX* d = Locator::getDisplay();
-  int x0 = DIAL_CX - DIAL_CLEAR;
-  int y0 = DIAL_CY - DIAL_CLEAR;
-  int side = DIAL_CLEAR * 2 + 1;
-  if (clearBg) drawPortraitRegion(x0, y0, side, side);
   const int cx = DIAL_CX;
   const int cy = DIAL_CY;
   const int r = DIAL_R;
+
+  // clearBg: refresh scene under dial corners. Never composite char/hat here.
+  if (clearBg) paintDialBackdrop();
+
+  // Cover previous hands in one solid face fill (no portrait wipe → no hair flash).
   d->fillCircle(cx, cy, r, COL_FACE);
   d->drawCircle(cx, cy, r, COL_RIM);
   if (r >= 8) d->drawCircle(cx, cy, r - 1, 0x5A68);
@@ -1166,14 +1305,26 @@ void Clockface::drawHourglass(int x, int y, int sec) {
   }
 }
 
-void Clockface::drawDigitalClock() {
+void Clockface::refreshDigitalOverlay() {
+  // Restore only the HUD regions from the frozen background, then redraw digits.
+  int8_t savedOx = _charOx;
+  _charOx = 80;
+  drawPortraitRegion(7, 18, 50, 14, false);   // HH:MM
+  drawPortraitRegion(26, 40, 11, 18, false);  // hourglass
+  _charOx = savedOx;
+  drawDigitalClock(false);
+}
+
+void Clockface::drawDigitalClock(bool paintBg) {
   if (!_dateTime) return;
   Adafruit_GFX* d = Locator::getDisplay();
 
-  int8_t savedOx = _charOx;
-  _charOx = 80;
-  drawPortraitRegion(0, 0, 64, 64, false);
-  _charOx = savedOx;
+  if (paintBg) {
+    int8_t savedOx = _charOx;
+    _charOx = 80;
+    drawPortraitRegion(0, 0, 64, 64, false);
+    _charOx = savedOx;
+  }
 
   int h = _dateTime->getHour();
   int m = _dateTime->getMinute();
@@ -1330,8 +1481,8 @@ void Clockface::drawZ(int x, int y, uint16_t color) {
 
 void Clockface::spawnSurpriseFx() {
   for (uint8_t i = 0; i < FX_N; i++) {
-    _fx[i] = 10 + (i * 6) % 44;
-    _fy[i] = 20 + (i * 5) % 28;
+    _fx[i] = 26 + (i * 6) % 30;  // keep clear of top-left dial
+    _fy[i] = 28 + (i * 5) % 20;
   }
   tickFxParticles();
 }
@@ -1339,14 +1490,14 @@ void Clockface::spawnSurpriseFx() {
 void Clockface::spawnSleepFx() {
   for (uint8_t i = 0; i < FX_N; i++) {
     _fx[i] = 38 + (i % 3) * 5;
-    _fy[i] = 18 + (i % 4) * 4;
+    _fy[i] = 22 + (i % 4) * 4;
   }
   tickFxParticles();
 }
 
 void Clockface::spawnHeartFx() {
   for (uint8_t i = 0; i < FX_N; i++) {
-    _fx[i] = 14 + (i * 5) % 36;
+    _fx[i] = 22 + (i * 5) % 32;
     _fy[i] = 28 + (i % 3) * 6;
   }
   tickFxParticles();
@@ -1354,15 +1505,17 @@ void Clockface::spawnHeartFx() {
 
 void Clockface::tickFxParticles() {
   Adafruit_GFX* d = Locator::getDisplay();
+  const int dx1 = DIAL_CX + DIAL_CLEAR;
+  const int dy1 = DIAL_CY + DIAL_CLEAR;
 
   // Clear previous center heart pulse area (was leaving vertical trails)
   if (_effect == POKE_HEART) {
-    drawPortraitRegion(28, 22, 10, 12);
+    drawPortraitRegion(28, 22, 10, 12, true);
   }
 
   for (uint8_t i = 0; i < FX_N; i++) {
     if (_fx[i] < 0) continue;
-    drawPortraitRegion(_fx[i] - 1, _fy[i] - 1, 7, 7);
+    drawPortraitRegion(_fx[i] - 1, _fy[i] - 1, 7, 7, true);
 
     _fy[i] -= 1;
     if (_effect == POKE_SLEEP && (i % 2) == 0) {
@@ -1374,10 +1527,10 @@ void Clockface::tickFxParticles() {
         _fx[i] = 36 + ((i * 7 + millis()) % 16);
         _fy[i] = 30 + (i % 6);
       } else if (_effect == POKE_HEART) {
-        _fx[i] = 12 + ((i * 9 + millis()) % 40);
+        _fx[i] = 22 + ((i * 9 + millis()) % 32);
         _fy[i] = 36 + (i % 8);
       } else {
-        _fx[i] = 8 + ((i * 11 + millis()) % 48);
+        _fx[i] = 26 + ((i * 11 + millis()) % 30);
         _fy[i] = 40 + (i % 10);
       }
     }
@@ -1385,6 +1538,11 @@ void Clockface::tickFxParticles() {
     if (_fx[i] < 2) _fx[i] = 2;
     if (_fx[i] > 58) _fx[i] = 58;
     if (_fy[i] > 48) _fy[i] = 48;
+    // never draw into analog dial
+    if (_fx[i] <= dx1 && _fy[i] <= dy1) {
+      _fx[i] = (int8_t)(dx1 + 2);
+      _fy[i] = (int8_t)(dy1 + 2);
+    }
 
     if (_effect == POKE_SLEEP) {
       drawZ(_fx[i], _fy[i], COL_Z);
@@ -1398,7 +1556,6 @@ void Clockface::tickFxParticles() {
       }
     }
   }
-
   if (_effect == POKE_HEART) {
     drawHeart(30, 26, COL_HEART);
     drawHeart(34, 28, COL_HEART);
@@ -1406,7 +1563,7 @@ void Clockface::tickFxParticles() {
   if (_effect == POKE_SLEEP) {
     applySleepClosed();
   }
-  drawTimeAnalog();
+  // Dial is protected during FX clears — do not redraw/flicker it here.
   if (_bubbleOn) drawBubble();
 }
 
